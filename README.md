@@ -2,6 +2,8 @@
 
 四家中文环境可访问的搜索引擎 —— **Bing / 百度 / 360 / 搜狗** —— 的 Web 搜索、图片搜索、输入联想三类公开 HTTP 端点实测记录：请求方式、请求头、参数语义、返回结构，以及**拒绝响应长什么样**。
 
+**在线浏览：https://silverbullet-liang.github.io/search-engine-endpoints/** ← 全部内容做成了单文件文档站，含参数表、请求头、请求示例与返回示例。
+
 所有结论来自 2026-10-25 的可复现实验。方法见 [bing/method.md](bing/method.md)。
 
 > **非官方项目**。与 Microsoft、百度、360、搜狗均无关联，未获授权或背书。
@@ -98,6 +100,7 @@ python3 test/test_parse.py
 
 ```
 .
+├── index.html      在线文档站（单文件、零依赖，GitHub Pages 部署）
 ├── bing/           Bing：7 篇（web / image / suggest / related-queries / fields / session / method）
 ├── baidu/          百度：README + web / image / suggest
 ├── 360/            360：README + web / image / suggest
