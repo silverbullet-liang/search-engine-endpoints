@@ -1,0 +1,1390 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>search-engine-endpoints · 四引擎搜索端点实测记录</title>
+<meta name="description" content="Bing / 百度 / 360 / 搜狗 的 Web、图片、联想端点实测记录：请求方式、请求头、返回结构、拒绝信号。非官方，仅文档，不含采集工具。">
+<meta name="color-scheme" content="dark light">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230b0b0c'/%3E%3Crect x='6' y='9' width='7' height='3' fill='%23e3b341'/%3E%3Crect x='6' y='15' width='14' height='3' fill='%23e6e6e3'/%3E%3Crect x='6' y='21' width='10' height='3' fill='%238f8f97'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#0b0b0c; --panel:#101013; --panel2:#15151a; --line:#24242a; --line2:#31313a;
+  --fg:#e8e8e4; --dim:#8b8b95; --dim2:#6b6b74;
+  --accent:#e3b341; --ok:#3fb950; --warn:#d29922; --err:#f85149; --info:#58a6ff;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono","Courier New",monospace;
+  --sans:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,-apple-system,sans-serif;
+  --r:3px;
+}
+html[data-theme="light"]{
+  --bg:#f6f6f3; --panel:#fffefb; --panel2:#f0efe9; --line:#dcdad2; --line2:#c6c3b8;
+  --fg:#1a1a19; --dim:#5f5f66; --dim2:#86868d;
+  --accent:#9a6b00; --ok:#1a7f37; --warn:#8a6100; --err:#c0262b; --info:#0a5fc0;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--fg);
+  font:400 14px/1.72 var(--mono);
+  -webkit-font-smoothing:antialiased;
+  font-variant-numeric:tabular-nums;
+}
+::selection{background:var(--accent); color:#000}
+a{color:var(--fg); text-decoration:none; border-bottom:1px solid var(--line2)}
+a:hover{border-bottom-color:var(--accent); color:var(--accent)}
+:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+button{font:inherit; color:inherit; background:none; border:0; cursor:pointer}
+code,kbd,samp,pre{font-family:var(--mono)}
+kbd{border:1px solid var(--line2); border-radius:var(--r); padding:1px 5px; font-size:11px; color:var(--dim)}
+
+/* ---------- 骨架 ---------- */
+.stage{display:grid; grid-template-columns:272px minmax(0,1fr); min-height:100vh}
+aside{
+  position:sticky; top:0; height:100vh; display:flex; flex-direction:column;
+  border-right:1px solid var(--line); background:var(--panel);
+}
+.brand{display:flex; align-items:center; gap:10px; padding:16px 16px 14px; border-bottom:1px solid var(--line)}
+.brand svg{flex:0 0 auto}
+.brand-t{font-size:12.5px; letter-spacing:.02em; line-height:1.35}
+.brand-t b{display:block; font-weight:600; letter-spacing:.01em}
+.brand-t span{color:var(--dim2); font-size:11px}
+.side-tools{padding:12px 12px 8px; display:flex; gap:8px}
+.search{
+  flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:7px;
+  border:1px solid var(--line); background:var(--panel2); border-radius:var(--r); padding:6px 8px;
+}
+.search:focus-within{border-color:var(--accent)}
+.search input{
+  flex:1 1 auto; min-width:0; border:0; background:none; color:var(--fg);
+  font:inherit; font-size:12.5px; outline:none; padding:0;
+}
+.search input::placeholder{color:var(--dim2)}
+.icon-btn{
+  display:inline-flex; align-items:center; justify-content:center; gap:6px;
+  width:30px; height:30px; border:1px solid var(--line); border-radius:var(--r);
+  color:var(--dim); background:var(--panel2);
+}
+.icon-btn:hover{color:var(--accent); border-color:var(--line2)}
+nav.side{flex:1 1 auto; overflow-y:auto; padding:4px 8px 16px; scrollbar-width:thin}
+.grp{margin:14px 0 4px; padding:0 8px; font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--dim2)}
+.grp:first-child{margin-top:6px}
+.item{
+  display:flex; align-items:center; gap:8px; width:100%; text-align:left;
+  padding:6px 8px 6px 10px; border-left:2px solid transparent; border-radius:0 var(--r) var(--r) 0;
+  color:var(--dim); font-size:12.5px;
+}
+.item:hover{background:var(--panel2); color:var(--fg)}
+.item[aria-current="page"]{border-left-color:var(--accent); background:var(--panel2); color:var(--fg)}
+.item .dot{width:5px; height:5px; border-radius:50%; flex:0 0 auto; background:currentColor; opacity:.45}
+.dot.ok{background:var(--ok); opacity:1}
+.dot.warn{background:var(--warn); opacity:1}
+.dot.err{background:var(--err); opacity:1}
+.item .lbl{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.side-foot{padding:10px 14px 14px; border-top:1px solid var(--line); font-size:11px; color:var(--dim2); line-height:1.7}
+.side-foot a{border-bottom-color:var(--line)}
+
+/* ---------- 主区 ---------- */
+main{min-width:0; padding:0 0 96px}
+.topbar{
+  position:sticky; top:0; z-index:5; display:flex; align-items:center; gap:12px;
+  padding:10px 28px; background:color-mix(in srgb,var(--bg) 88%,transparent);
+  backdrop-filter:blur(8px); border-bottom:1px solid var(--line);
+}
+.crumb{display:flex; align-items:center; gap:8px; font-size:12px; color:var(--dim2); min-width:0}
+.crumb b{color:var(--fg); font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.crumb .sep{opacity:.5}
+.topbar .spacer{flex:1 1 auto}
+.menu-btn{display:none}
+
+article{padding:34px 28px 0; max-width:938px}
+h1{font-size:25px; line-height:1.32; margin:0 0 10px; letter-spacing:-.01em; font-weight:600}
+.sub{color:var(--dim); font-size:13px; margin:0 0 22px; max-width:74ch}
+.meta{display:flex; flex-wrap:wrap; gap:8px; margin:0 0 26px}
+.chip{
+  display:inline-flex; align-items:center; gap:6px; padding:3px 8px;
+  border:1px solid var(--line2); border-radius:999px; font-size:11.5px; color:var(--dim);
+}
+.chip .dot{width:5px; height:5px; border-radius:50%}
+.chip.ok{color:var(--ok); border-color:color-mix(in srgb,var(--ok) 40%,var(--line2))}
+.chip.ok .dot{background:var(--ok)}
+.chip.warn{color:var(--warn); border-color:color-mix(in srgb,var(--warn) 40%,var(--line2))}
+.chip.warn .dot{background:var(--warn)}
+.chip.err{color:var(--err); border-color:color-mix(in srgb,var(--err) 40%,var(--line2))}
+.chip.err .dot{background:var(--err)}
+.chip.info{color:var(--info); border-color:color-mix(in srgb,var(--info) 40%,var(--line2))}
+.chip.info .dot{background:var(--info)}
+
+section.blk{margin:0 0 34px}
+h2{
+  display:flex; align-items:baseline; gap:10px; margin:0 0 12px;
+  font-size:12px; letter-spacing:.12em; text-transform:uppercase; color:var(--dim);
+  font-weight:500;
+}
+h2 .num{color:var(--accent); letter-spacing:.04em}
+h2::after{content:""; flex:1 1 auto; height:1px; background:var(--line)}
+h3{font-size:13px; margin:18px 0 6px; font-weight:600; color:var(--fg)}
+p{margin:0 0 12px; max-width:78ch}
+ul{margin:0 0 12px; padding-left:18px}
+li{margin:0 0 6px; max-width:78ch}
+li::marker{color:var(--dim2)}
+strong{font-weight:600}
+.hint{color:var(--dim); font-size:12.5px}
+
+/* 表格 */
+.tw{overflow-x:auto; border:1px solid var(--line); border-radius:var(--r); margin:0 0 14px}
+table{width:100%; border-collapse:collapse; font-size:12.5px}
+th,td{text-align:left; padding:8px 11px; border-bottom:1px solid var(--line); vertical-align:top}
+th{color:var(--dim); font-weight:500; background:var(--panel2); white-space:nowrap; font-size:11.5px; letter-spacing:.03em}
+tr:last-child td{border-bottom:0}
+td code{font-size:11.5px; color:var(--fg)}
+td .dot{display:inline-block; width:5px; height:5px; border-radius:50%; margin-right:6px; vertical-align:1px}
+td.wrap{min-width:15ch}
+
+/* 代码块 */
+.code{border:1px solid var(--line); border-radius:var(--r); background:var(--panel); margin:0 0 14px; overflow:hidden}
+.code-bar{
+  display:flex; align-items:center; gap:8px; padding:5px 8px 5px 11px;
+  border-bottom:1px solid var(--line); background:var(--panel2);
+}
+.code-bar .tag{font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--dim2)}
+.code-bar .spacer{flex:1 1 auto}
+.copy{display:inline-flex; align-items:center; gap:5px; font-size:11px; color:var(--dim2); padding:2px 6px; border-radius:var(--r)}
+.copy:hover{color:var(--accent); background:var(--bg)}
+.copy.done{color:var(--ok)}
+.code pre{
+  margin:0; padding:12px 13px; overflow-x:auto; font-size:12.5px; line-height:1.66;
+  color:var(--fg); tab-size:2; scrollbar-width:thin;
+}
+.code pre::-webkit-scrollbar{height:8px}
+.code pre::-webkit-scrollbar-thumb{background:var(--line2); border-radius:4px}
+.k{color:var(--dim2)}
+.s{color:var(--ok)}
+.url{color:var(--info)}
+
+/* 端点行 */
+.ep{display:flex; flex-wrap:wrap; align-items:center; gap:10px; margin:0 0 16px}
+.verb{
+  font-size:11.5px; letter-spacing:.08em; padding:2px 7px; border-radius:var(--r);
+  border:1px solid color-mix(in srgb,var(--ok) 45%,var(--line2)); color:var(--ok);
+}
+.ep .path{font-size:14px; word-break:break-all; color:var(--fg)}
+
+/* 分组小结卡 */
+.grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:10px; margin:0 0 16px}
+.card{border:1px solid var(--line); border-radius:var(--r); padding:11px 12px; background:var(--panel)}
+.card .t{font-size:12.5px; margin-bottom:4px}
+.card .d{font-size:11.5px; color:var(--dim); line-height:1.6}
+.card .n{font-size:10.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--dim2); margin-bottom:6px}
+
+footer{border-top:1px solid var(--line); margin-top:44px; padding:18px 28px; color:var(--dim2); font-size:11.5px; max-width:938px}
+footer a{border-bottom-color:var(--line)}
+
+.scrim{display:none}
+@media (max-width:900px){
+  .stage{grid-template-columns:1fr}
+  aside{
+    position:fixed; z-index:20; inset:0 auto 0 0; width:290px; height:100%;
+    transform:translateX(-100%); transition:transform .18s ease;
+  }
+  body.nav-open aside{transform:none}
+  body.nav-open .scrim{display:block; position:fixed; inset:0; z-index:15; background:rgba(0,0,0,.55)}
+  .menu-btn{display:inline-flex}
+  article{padding:24px 16px 0}
+  .topbar{padding:8px 16px}
+  h1{font-size:21px}
+  footer{padding:16px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none !important; animation:none !important}}
+</style>
+</head>
+<body>
+<div class="stage">
+  <aside id="side" aria-label="文档导航">
+    <div class="brand">
+      <svg width="26" height="26" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" fill="none" stroke="currentColor" stroke-width="1" opacity=".35"/>
+        <rect x="6" y="9" width="7" height="3" fill="#e3b341"/>
+        <rect x="6" y="15" width="14" height="3" fill="currentColor"/>
+        <rect x="6" y="21" width="10" height="3" fill="currentColor" opacity=".45"/>
+      </svg>
+      <div class="brand-t"><b>search-engine-endpoints</b><span>四引擎 · 端点实测</span></div>
+    </div>
+    <div class="side-tools">
+      <label class="search">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="7" cy="7" r="4.6"/><path d="M10.6 10.6 14 14"/></svg>
+        <input id="q" type="search" placeholder="筛选文档「 aria-label=」筛选文档" autocomplete="off">
+      </label>
+      <button class="icon-btn" id="theme" aria-label="切换配色「 title=」切换配色">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M8 1.6v1.6M8 12.8v1.6M1.6 8h1.6M12.8 8h1.6M3.5 3.5l1.1 1.1M11.4 11.4l1.1 1.1M12.5 3.5l-1.1 1.1M4.6 11.4l-1.1 1.1"/><circle cx="8" cy="8" r="2.8"/></svg>
+      </button>
+    </div>
+    <nav class="side" id="nav"></nav>
+    <div class="side-foot">
+      2026-10-25 实测 · 匿名会话<br>
+      <a href="https://github.com/silverbullet-liang/search-engine-endpoints" target="_blank" rel="noopener">GitHub 仓库</a> ·
+      <a href="https://github.com/silverbullet-liang/search-engine-endpoints/blob/main/NOTICE.md" target="_blank" rel="noopener">合规边界</a>
+    </div>
+  </aside>
+  <div class="scrim" id="scrim"></div>
+  <main>
+    <div class="topbar">
+      <button class="icon-btn menu-btn" id="menu" aria-label="打开导航" aria-expanded="false">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 4h12M2 8h12M2 12h12"/></svg>
+      </button>
+      <div class="crumb"><span id="crumb-grp">概览</span><span class="sep">/</span><b id="crumb-lbl">总览</b></div>
+      <div class="spacer"></div>
+      <a class="chip" href="https://github.com/silverbullet-liang/search-engine-endpoints" target="_blank" rel="noopener" style="border-bottom:0">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38v-1.33c-2.23.48-2.7-1.07-2.7-1.07-.36-.93-.89-1.18-.89-1.18-.73-.5.05-.49.05-.49.8.06 1.23.83 1.23.83.72 1.23 1.88.88 2.34.67.07-.52.28-.88.5-1.08-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 0 1 4 0c1.53-1.03 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.28.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48v2.2c0 .21.15.46.55.38A8 8 0 0 0 16 8c0-4.42-3.58-8-8-8Z"/></svg>
+        repo
+      </a>
+    </div>
+    <article id="view" tabindex="-1"></article>
+    <footer>
+      非官方项目，与 Microsoft / 百度 / 360 / 搜狗 无关联。本页只记录公开可观测的接口事实，不含采集工具，也不提供验证码或指纹绕过方法。
+      四家 <code>robots.txt</code> 对通配代理均为禁止或受限状态 —— 详见 <a href="https://github.com/silverbullet-liang/search-engine-endpoints/blob/main/NOTICE.md" target="_blank" rel="noopener">NOTICE.md</a>。
+    </footer>
+  </main>
+</div>
+<script>
+const REPO = "https://github.com/silverbullet-liang/search-engine-endpoints";
+
+const NAV = [
+  { group: "概览", items: [
+    { id: "overview", label: "总览" },
+    { id: "matrix",   label: "可用性矩阵" },
+    { id: "rejects",  label: "拒绝形态" },
+    { id: "compliance", label: "合规边界" } ] },
+  { group: "Bing", items: [
+    { id: "bing-web",     label: "Web 搜索",  status: "warn" },
+    { id: "bing-image",   label: "图片搜索",  status: "ok" },
+    { id: "bing-suggest", label: "输入联想",  status: "ok" },
+    { id: "bing-related", label: "相关查询",  status: "ok" } ] },
+  { group: "百度", items: [
+    { id: "baidu-web",     label: "Web 搜索", status: "err" },
+    { id: "baidu-image",   label: "图片搜索", status: "err" },
+    { id: "baidu-suggest", label: "输入联想", status: "ok" } ] },
+  { group: "360", items: [
+    { id: "360-web",     label: "Web 搜索", status: "err" },
+    { id: "360-image",   label: "图片搜索", status: "ok" },
+    { id: "360-suggest", label: "输入联想", status: "ok" } ] },
+  { group: "搜狗", items: [
+    { id: "sogou-web",     label: "Web 搜索", status: "err" },
+    { id: "sogou-image",   label: "图片搜索", status: "err" },
+    { id: "sogou-suggest", label: "输入联想", status: "err" } ] }
+];
+
+const DOCS = {
+
+/* ============ 总览 ============ */
+overview: {
+  group: "概览「, label: 」总览",
+  title: "四家搜索引擎的公开端点，实测一遍",
+  sub: "Bing / 百度 / 360 / 搜狗 的 Web 搜索、图片搜索、输入联想端点：请求方式、请求头、返回结构，以及拒绝响应长什么样。全部数据来自 2026-10-25 的匿名会话实测。",
+  meta: [{ l: "info", t: "14 个端点" }, { l: "info", t: "2026-10-25 实测" }, { l: "", t: "非官方 · 仅文档" }],
+  custom: `
+  <div class="grid">
+    <div class="card"><div class="n">Bing</div><div class="t">唯一可分页</div><div class="d">/images/async 支持 first 偏移，带会话 Cookie 可翻到第 N 条；Web 结果页只给首页 10 条。</div></div>
+    <div class="card"><div class="n">百度</div><div class="t">联想最规整</div><div class="d">sugrec 是纯 JSON；图片接口对非浏览器返回 antiFlag，Web 则 302 到图形验证码。</div></div>
+    <div class="card"><div class="n">360</div><div class="t">图片 JSON 最全</div><div class="d">image.so.com/j 一次回 124 KB、38 个字段，但 list 是累积集合不是单页。</div></div>
+    <div class="card"><div class="n">搜狗</div><div class="t">三种拒绝</div><div class="d">302 antispider、200+forbid、200+0 字节，全部看起来像「成功了」。</div></div>
+  </div>
+
+  <h2><span class="num">01</span> 四条硬结论</h2>
+  <ul>
+    <li><strong>只有 Bing 把图片分页做成了片段级接口。</strong> <code>/images/async</code> 返回可直接嵌入的 HTML 片段，<code>first</code> 是 1-based 起始序号；<code>first=1 / 36 / 71</code> 得到三批互不重叠的结果，且与页面第 1/36/71 条精确对齐。</li>
+    <li><strong>同一批「看起来是 200」的响应里，有五种完全不同的拒绝。</strong> 只判断 <code>status === 200</code> 的客户端会把它们全部当成成功，然后在解析阶段崩掉。</li>
+    <li><strong>技术可达 ≠ 授权允许。</strong> 360 的 <code>image.so.com/j</code> 是唯一能直接吐结构化图片数据的接口，而它恰好被 <code>robots.txt</code> 的 <code>Disallow: /j?</code> 点名禁止。</li>
+    <li><strong>这些端点没有版本、没有 SLA。</strong> 风控判定随出口 IP、客户端指纹、时段变化。今天测通的明天可能 302，所有数值都带日期。</li>
+  </ul>
+
+  <h2><span class="num">02</span> 实测环境</h2>
+  <div class="tw"><table>
+    <tr><th>项</th><th>值</th></tr>
+    <tr><td>日期</td><td>2026-10-25</td></tr>
+    <tr><td>出口</td><td>中国（腾讯云 AS45090 等；沙箱多出口，不同请求可能走不同 IP）</td></tr>
+    <tr><td>HTTP 客户端</td><td>curl 8.14.1（OpenSSL 3.5.5，HTTP/2）</td></tr>
+    <tr><td>浏览器</td><td>Chrome for Testing 156.0.8078.47（headless）</td></tr>
+    <tr><td>会话</td><td>全部未登录的匿名访问</td></tr>
+    <tr><td>地域跳转</td><td><code>www.bing.com</code> → <code>cn.bing.com</code>；其余三家不跳转</td></tr>
+  </table></div>
+  <p class="hint">换网络环境请重新验证：搜索风控直接看出口 IP，搜狗的拦截页会把 IP 打在页面上。</p>
+
+  <h2><span class="num">03</span> 这个站点是什么 / 不是什么</h2>
+  <p><strong>是</strong>：可复现的接口事实记录，用于互操作性研究、无障碍工具、搜索结果可访问性分析。每一条结论都能在仓库的 Markdown 里找到对应的实验过程。</p>
+  <p><strong>不是</strong>：采集工具、官方 SDK 替代、数据供应商。<strong>不含</strong>翻页循环、并发调度、Cookie 生成、指纹伪装、验证码绕过。</p>
+  <p class="hint">四家的 <code>robots.txt</code> 对通配代理（<code>User-agent: *</code>）全部是禁止或受限状态。这是站点定位被收紧到「只记录、不动手」的直接原因。</p>`
+},
+
+/* ============ 可用性矩阵 ============ */
+matrix: {
+  group: "概览「, label: 」可用性矩阵",
+  title: "谁可以用、谁被挡住",
+  sub: "同一台机器、同一个匿名会话、同一天。区别只在端点的风控强度。",
+  meta: [{ l: "info", t: "2026-10-25" }],
+  custom: `
+  <h2><span class="num">01</span> 三类端点对比</h2>
+  <div class="tw"><table>
+    <tr><th>引擎</th><th>Web 结果页</th><th>图片接口</th><th>输入联想</th><th>robots（<code>*</code> 段）</th></tr>
+    <tr>
+      <td><b>Bing</b></td>
+      <td><span class="dot" style="background:var(--warn)"></span>200，仅第 1 页</td>
+      <td><span class="dot" style="background:var(--ok)"></span>可分页</td>
+      <td><span class="dot" style="background:var(--ok)"></span>可用</td>
+      <td>禁 <code>/search</code>、<code>/images/async?</code></td>
+    </tr>
+    <tr>
+      <td><b>百度</b></td>
+      <td><span class="dot" style="background:var(--err)"></span>302 验证码<sup>1</sup></td>
+      <td><span class="dot" style="background:var(--err)"></span><code>antiFlag</code></td>
+      <td><span class="dot" style="background:var(--ok)"></span>可用（两种格式）</td>
+      <td><code>Disallow: /</code></td>
+    </tr>
+    <tr>
+      <td><b>360</b></td>
+      <td><span class="dot" style="background:var(--err)"></span>302 <code>qcaptcha</code></td>
+      <td><span class="dot" style="background:var(--ok)"></span>可用（累积集合）</td>
+      <td><span class="dot" style="background:var(--ok)"></span>可用</td>
+      <td>禁 <code>/s</code>、<code>/j?</code></td>
+    </tr>
+    <tr>
+      <td><b>搜狗</b></td>
+      <td><span class="dot" style="background:var(--err)"></span>302 <code>antispider</code></td>
+      <td><span class="dot" style="background:var(--err)"></span><code>forbid</code></td>
+      <td><span class="dot" style="background:var(--err)"></span>200 + 0 字节</td>
+      <td><code>Disallow: /</code>、<code>/napi</code></td>
+    </tr>
+  </table></div>
+  <p class="hint"><sup>1</sup> 百度 Web 页在<strong>真实浏览器</strong>里返回 200 正常结果，curl 则被 302 到 <code>wappass</code> 图形验证码 —— 同 IP、同 URL，只有客户端不同。</p>
+
+  <h2><span class="num">02</span> 为什么 Bing 的图片分页能复现</h2>
+  <p>Bing 把图片翻页做成了<strong>片段级接口</strong>（<code>/images/async</code>，返回一段无 <code>&lt;html&gt;</code> 外壳的 HTML，供前端插入）。片段级端点的风控宽松得多：带一次浏览器会话的 Cookie，参数就生效。</p>
+  <p>其余三家把分页藏在<strong>文档级导航</strong>里（整页 <code>/search?first=</code>），风控按「文档请求」处理，外部客户端一律拿不到第二页。这个分层判断解释了全部现象，也是本仓库最实用的一条结论。</p>
+
+  <h2><span class="num">03</span> 分页语义对照</h2>
+  <div class="tw"><table>
+    <tr><th>端点</th><th>参数</th><th>语义</th><th>每批条数</th><th>备注</th></tr>
+    <tr><td>Bing <code>/images/async</code></td><td><code>first</code></td><td>1-based 起始序号</td><td>≤35</td><td><code>count</code> 被忽略</td></tr>
+    <tr><td>Bing <code>/search</code></td><td><code>first</code></td><td>1-based（浏览器内有效）</td><td>10</td><td>外部客户端固定回第 1 页</td></tr>
+    <tr><td>百度 <code>acjson</code></td><td><code>pn</code> / <code>gsm</code></td><td><code>gsm</code> = <code>pn</code> 的十六进制</td><td>30</td><td>未取得正常响应</td></tr>
+    <tr><td>360 <code>/j</code></td><td><code>pn</code></td><td>已加载条数（累积）</td><td>85–234</td><td><code>rn</code> 被忽略</td></tr>
+    <tr><td>搜狗 <code>napi</code></td><td><code>start</code></td><td>未知</td><td>—</td><td><code>forbid</code></td></tr>
+  </table></div>`
+},
+
+/* ============ 拒绝形态 ============ */
+rejects: {
+  group: "概览「, label: 」拒绝形态",
+  title: "五种「成功」，五种拒绝",
+  sub: "这些端点的拒绝大多不是 4xx。它们返回 200、返回合法 JSON、返回完整 HTML —— 只有细节暴露真相。",
+  meta: [{ l: "err", t: "最易误判" }],
+  custom: `
+  <h2><span class="num">01</span> 形态与判据</h2>
+  <div class="tw"><table>
+    <tr><th>形态</th><th>出现位置</th><th>判据</th></tr>
+    <tr><td>302 → 验证码</td><td>百度 <code>/s</code>、360 <code>/s</code></td><td><code>Location</code> 含 <code>wappass</code> / <code>qcaptcha</code></td></tr>
+    <tr><td>302 → antispider</td><td>搜狗 <code>/web</code></td><td><code>Location</code> 含 <code>/antispider/</code>，带 <code>antip=</code></td></tr>
+    <tr><td>200 + <code>antiFlag:1</code></td><td>百度 <code>acjson</code></td><td><code>body.antiFlag === 1</code></td></tr>
+    <tr><td>200 + <code>info:"forbid"</code></td><td>搜狗 <code>napi</code></td><td><code>body.status === 1</code> 且 <code>data</code> 为 <code>null</code></td></tr>
+    <tr><td>200 + 0 字节</td><td>搜狗 <code>ajajjson</code></td><td><code>Content-Length: 0</code></td></tr>
+  </table></div>
+
+  <h2><span class="num">02</span> 四条实际响应</h2>
+  <div class="code"><div class="code-bar"><span class="tag">json</span><span class="spacer"></span><button class="copy" data-copy>复制</button></div><pre>{"antiFlag":1,"message":"Forbid spider access","bfe_log_id":"10155720265341393354"}</pre></div>
+  <div class="code"><div class="code-bar"><span class="tag">json</span><span class="spacer"></span><button class="copy" data-copy>复制</button></div><pre>{"status":1,"info":"forbid","data":null}</pre></div>
+  <div class="code"><div class="code-bar"><span class="tag">http</span><span class="spacer"></span><button class="copy" data-copy>复制</button></div><pre>HTTP/1.1 302 Found
+Location: https://wappass.baidu.com/static/captcha/tuxing_v2.html?&amp;logid=…
+          &amp;backurl=https%3A%2F%2Fwww.baidu.com%2Fs%3Fwd%3Dtest&amp;signature=…</pre></div>
+  <div class="code"><div class="code-bar"><span class="tag">http</span><span class="spacer"></span><button class="copy" data-copy>复制</button></div><pre>HTTP/1.1 200 OK
+Content-Type: application/octet-stream
+Content-Length: 0</pre></div>
+
+  <h2><span class="num">03</span> 一个可复用的判定流程</h2>
+  <ul>
+    <li>取两种参数值各请求一次（如 <code>first=1</code> 与 <code>first=36</code>），比较结果集标识集合。</li>
+    <li>有差异 → 参数生效，接口可用。</li>
+    <li>完全一致 → <strong>不要立刻判定"参数无效"</strong>，先在真实浏览器里对同一 URL 做一次 <code>fetch</code> 再比。</li>
+    <li>浏览器里有差异、外部客户端一致 → 是环境/指纹问题，停止调参。</li>
+    <li>两边都一致 → 参数确实无效，接受结论。</li>
+  </ul>
+  <p class="hint">第三步是关键。跳过它，就会把「会话降级」写成"参数失效「——本仓库早期就犯过这个错，后来靠浏览器点一次」下一页"才发现反了。</p>
+
+  <h2><span class="num">04</span> 降级信号的指纹</h2>
+  <div class="tw"><table>
+    <tr><th>信号</th><th>含义</th></tr>
+    <tr><td><code>vcf.bing.com/bd/verify</code>、<code>status=bdvexc</code></td><td>Bing 判定为非人工浏览，后续请求降级</td></tr>
+    <tr><td>Bing 图片页高度只有 ~1701px、滚动不追加</td><td>只给了单屏 35 条</td></tr>
+    <tr><td><code>/search</code> 响应 103 KB 而非 306 KB</td><td>降级版页面，分页不生效</td></tr>
+  </table></div>`
+},
+
+/* ============ 合规 ============ */
+compliance: {
+  group: "概览「, label: 」合规边界",
+  title: "四家的 robots.txt 说了什么",
+  sub: "这不是法律意见，是划线依据的原始证据。四家的搜索端点，对通配代理全部处于禁止或受限状态。",
+  meta: [{ l: "err", t: "先读再动手" }],
+  custom: `
+  <h2><span class="num">01</span> 规则一览</h2>
+  <div class="tw"><table>
+    <tr><th>站点</th><th><code>User-agent: *</code> 段</th><th>与本仓库端点的关系</th></tr>
+    <tr><td><code>www.bing.com</code></td><td><code>Disallow: /search</code>、<code>/images/async?</code>、<code>/images/search?</code>、<code>/th?</code></td><td>覆盖全部搜索端点</td></tr>
+    <tr><td><code>www.baidu.com</code></td><td><code>Disallow: /</code></td><td>全站禁止</td></tr>
+    <tr><td><code>image.baidu.com</code></td><td><code>Disallow: /</code></td><td>全站禁止（对具名爬虫为 <code>Allow: /</code>）</td></tr>
+    <tr><td><code>www.so.com</code></td><td><code>Disallow: /s</code>、<code>/link</code>、<code>/brw</code></td><td>覆盖 Web 搜索</td></tr>
+    <tr><td><code>image.so.com</code></td><td><code>Disallow: /j?</code>、<code>/i?</code>、<code>/z?</code></td><td>覆盖图片接口</td></tr>
+    <tr><td><code>www.sogou.com</code></td><td><code>Disallow: /</code></td><td>全站禁止</td></tr>
+    <tr><td><code>pic.sogou.com</code></td><td>白名单：仅放行 6 个目录，其余 Disallow（含 <code>/napi</code>）</td><td>覆盖图片接口</td></tr>
+  </table></div>
+
+  <h2><span class="num">02</span> 原文节选</h2>
+  <div class="code"><div class="code-bar"><span class="tag">robots.txt</span><span class="spacer"></span><button class="copy" data-copy>复制</button></div><pre># www.bing.com
+User-agent: *
+Disallow: /search
+Disallow: /images/async?
+Disallow: /images/search?
+
+# www.baidu.com / image.baidu.com
+User-agent: *
+Disallow: /
+
+# www.so.com
+User-agent: *
+Disallow: /s
+Disallow: /link
+Disallow: /brw
+
+# image.so.com
+User-agent: *
+Disallow: /j?
+
+# www.sogou.com
+User-agent: *
+Disallow: /
+
+# pic.sogou.com
+User-agent: *
+Allow: /imgcate/
+Allow: /help/
+…
+Disallow: /pics?
+Disallow: /napi
+Disallow: /ris</pre></div>
+
+  <h2><span class="num">03</span> 容易读错的两处</h2>
+  <ul>
+    <li><strong>百度</strong>对具名搜索引擎爬虫几乎全放行（<code>User-agent: Baiduspider</code> → <code>Allow: /</code>），对通配代理才是 <code>Disallow: /</code>。"百度允许抓取"只对报备过的爬虫成立。</li>
+    <li><strong>360 的图片接口</strong>技术上一调就通（124 KB、38 个字段），而它恰好被 <code>Disallow: /j?</code> 点名。<strong>技术可达与授权允许是两件事。</strong></li>
+  </ul>
+
+  <h2><span class="num">04</span> 本仓库不做的事</h2>
+  <ul>
+    <li>批量或持续性采集搜索结果。</li>
+    <li>绕过任何人机验证、风控挑战（<code>vcf</code>、<code>bdvexc</code>、<code>wappass</code>、<code>qcaptcha</code>、<code>/antispider/</code>、<code>antiFlag</code>、<code>forbid</code>）。</li>
+    <li>伪造客户端指纹（TLS/HTTP2、浏览器指纹）以改变服务端对待方式。</li>
+    <li>轮换 IP / 代理池以规避按来源的限额或封禁。</li>
+    <li>再分发搜索结果内容、图像或其中的第三方链接集合。</li>
+    <li>把端点用于替代官方商业授权的生产数据源。</li>
+  </ul>
+  <p class="hint">完整表述见 <a href="https://github.com/silverbullet-liang/search-engine-endpoints/blob/main/NOTICE.md" target="_blank" rel="noopener">NOTICE.md</a>，含四家 robots 的完整引录与 RSS 版权声明原文。</p>`
+},
+
+/* ============ Bing · Web ============ */
+"bing-web": {
+  group: "Bing", label: "Web 搜索",
+  title: "Web 搜索",
+  sub: "服务端渲染的结果页。参数解析有效、分页在浏览器里有效，但对外部 HTTP 客户端只给第一页。",
+  status: { l: "warn", t: "仅第 1 页" },
+  method: "GET", url: "https://cn.bing.com/search",
+  src: "bing/web.md",
+  params: [
+    ["q", "是「, 」查询串，URL 编码"],
+    ["first", "否", "1-based 起始序号。<strong>对浏览器有效，对外部客户端无效</strong>"],
+    ["count", "否「, 」期望条数。实测无效，固定 10 条"],
+    ["format", "否", "<code>rss</code> 切到 RSS 输出；<code>json</code> 被静默忽略"],
+    ["mkt / setlang / cc", "否「, 」市场与界面语言，生效"],
+    ["ensearch", "否「, 」置 <code>1</code> 强制英文结果，<code>&lt;title&gt;</code> 随之变化"],
+    ["FPIG", "否「, 」分页指纹，由上一页 HTML 生成；分页时必需，但对外部客户端仍不足"],
+    ["FORM", "否「, 」来源标记（<code>QBLH</code> / <code>QBRE</code> / <code>PERE</code>），不影响内容"]
+  ],
+  headers: `User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36
+Referer: https://cn.bing.com/
+Accept: text/html,application/xhtml+xml
+Accept-Language: zh-CN,zh;q=0.9`,
+  curl: `curl -sS \\
+  -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36' \\
+  -e 'https://cn.bing.com/' \\
+  'https://cn.bing.com/search?q=kimi+%E6%B8%B8%E6%88%8F' -o search.html`,
+  responseTag: "html",
+  response: `<ol id="b_results">
+  <li class="b_algo" data-id iid="SERP.5334">
+    <h2><a href="https://example.com/" h="ID=SERP,…">结果标题</a></h2>
+    <div class="b_caption">
+      <p class="b_lineclamp2 b_algoSlug">摘要文本…</p>
+    </div>
+    <cite>example.com</cite>
+  </li>
+  … 共 10 条
+</ol>
+<span class="sb_count">83,000 条结果</span>`,
+  extra: `<h2><span class="num">04</span> first 为何对外部客户端无效</h2>
+  <div class="tw"><table>
+    <tr><th>上下文</th><th>first=11 的结果</th></tr>
+    <tr><td>curl（无 Cookie）</td><td>第 1 页</td></tr>
+    <tr><td>curl（17 项 Cookie）</td><td>第 1 页，103 KB</td></tr>
+    <tr><td>curl（+ FPIG + Referer + sec-fetch-* + sec-ch-ua + br,zstd）</td><td>第 1 页，103 KB</td></tr>
+    <tr><td>浏览器导航（点「下一页」）</td><td><strong>第 2 页</strong>，306 KB</td></tr>
+    <tr><td>浏览器内 fetch（同源同 Cookie）</td><td><strong>第 2 页</strong>，306 KB</td></tr>
+  </table></div>
+  <p>七个可枚举的 HTTP 层因素全部补齐仍无效，只剩连接指纹（TLS ClientHello / HTTP2 帧特征）一层。三个不同查询词 × <code>first=1/11/21</code> 交叉验证，结果集交集恒为 10/10。</p>`,
+  notes: [
+    "换页在服务端确实存在，不是纯前端替换 —— 浏览器点「下一页」后首条从 <code>rust-lang.github.io/…</code> 变为 <code>corrode.dev/…</code>。",
+    "取结果必须限定 <code>li.b_algo</code>；广告位、知识卡、视频卡是不同的 class，用「所有 <code>li</code>」会混入非自然结果。",
+    "<code>cite</code> 是展示用域名，不是规范 URL，不要当链接用。",
+    "<code>sb_count</code> 只给量级（同一会话内不同查询 83,000 / 456,000），不是可翻页的总量承诺。"
+  ],
+  compliance: `<code>robots.txt</code>：<code>User-agent: *</code> → <code>Disallow: /search</code>、<code>Disallow: /Search</code>。RSS 输出另附版权声明，限制结果内容的使用与再分发。`
+},
+
+/* ============ Bing · 图片 ============ */
+"bing-image": {
+  group: "Bing", label: "图片搜索",
+  title: "图片搜索 · 唯一可分页的接口",
+  sub: "两个端点分工：/images/search 给首屏，/images/async 给后续批次。要拿数据只用后者——它返回可直接嵌入的 HTML 片段。",
+  status: { l: "ok", t: "可分页" },
+  method: "GET", url: "https://cn.bing.com/images/async",
+  src: "bing/image.md",
+  params: [
+    ["q", "是「, 」查询词"],
+    ["first", "是", "1-based 起始序号。第 36 条 = <code>first=36</code>（与 DOM 顺序精确对齐）"],
+    ["count", "否「, 」实测被忽略：10 / 35 / 100 都回 35 条"],
+    ["mmasync", "否「, 」浏览器会带 <code>1</code>，实测可省"],
+    ["qft", "否「, 」过滤器，如 <code>+filterui:imagesize-large</code>（需 URL 编码）"],
+    ["imgbf / dgState / IG / SFX / iid / cw / ch", "否", "<strong>全部可剥离</strong>，剥离后结果完全一致"]
+  ],
+  headers: `User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36
+Referer: https://cn.bing.com/images/search?q=%E7%8C%AB
+Accept: text/html,application/xhtml+xml
+# 跨批次取结果时需要一个浏览器会话的 Cookie（-b cookies.txt）`,
+  curl: `# 首批（无 Cookie 也可拿到第 1 批）
+curl -sS 'https://cn.bing.com/images/async?q=%E7%8C%AB&first=1&count=35&mmasync=1' \\
+  -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36' \\
+  -o fragment.html
+
+# 解析（仓库自带，零依赖）
+python3 examples/parse_images.py fragment.html --limit 3`,
+  responseTag: "html 片段",
+  response: `<style type="text/css">.mc_fh{…}</style>
+<ul data-row="0" class="dgControl_list" data-infullrow="1">
+  <li data-idx="1" style="width:241px; height:234px">
+    <div class="iuscp isv smallheight">
+      <div class="imgpt">
+        <a aria-label="…的图像结果" role="link" class="iusc"
+           m="{&quot;cid&quot;:&quot;AAAABBBB&quot;,
+              &quot;purl&quot;:&quot;https://example.com/article/1&quot;,
+              &quot;murl&quot;:&quot;https://cdn.example.com/1.jpg&quot;,
+              &quot;turl&quot;:&quot;https://ts1.mm.bing.net/th?id=OIP.…&amp;pid=15.1&quot;,
+              &quot;md5&quot;:&quot;1111…&quot;,&quot;t&quot;:&quot;标题&quot;,
+              &quot;desc&quot;:&quot;描述\\ue000高亮\\ue001文本&quot;}"></a>
+      </div>
+    </div>
+  </li>
+  … 共 35 条
+</ul>`,
+  extra: `<h2><span class="num">04</span> 剥离实验（同一会话内）</h2>
+  <div class="tw"><table>
+    <tr><th>组合</th><th>条数</th><th>首条 cid</th><th>与全参数一致</th></tr>
+    <tr><td>全参数（imgbf + dgState + IG + SFX + iid + cw/ch）</td><td>35</td><td><code>jue+tHyr</code></td><td>—</td></tr>
+    <tr><td>去掉 dgState</td><td>35</td><td><code>jue+tHyr</code></td><td>✅</td></tr>
+    <tr><td>去掉 imgbf</td><td>35</td><td><code>jue+tHyr</code></td><td>✅</td></tr>
+    <tr><td>去掉 IG</td><td>35</td><td><code>jue+tHyr</code></td><td>✅</td></tr>
+    <tr><td>只剩 q / first / count / mmasync</td><td>35</td><td><code>jue+tHyr</code></td><td>✅</td></tr>
+    <tr><td>first=71</td><td>35</td><td><code>jcvGxm0i</code></td><td>换批</td></tr>
+  </table></div>
+
+  <h2><span class="num">05</span> 跨批翻页（实测）</h2>
+  <div class="tw"><table>
+    <tr><th>请求</th><th>条数</th><th>首条 cid</th><th>相邻批次重叠</th></tr>
+    <tr><td>first=1</td><td>35</td><td><code>4QyC+UNQ</code></td><td>—</td></tr>
+    <tr><td>first=36</td><td>35</td><td><code>qBplLjJ4</code></td><td>与第 1 批 0 条</td></tr>
+    <tr><td>first=71</td><td>34</td><td><code>rGwB5gmm</code></td><td>与第 2 批 6 条</td></tr>
+  </table></div>
+  <p>结论：<code>first</code> 生效需要一次浏览器会话的 Cookie；相邻批次会有少量重复，去重键用 <code>md5</code>（跨批稳定），不要用 <code>cid</code>（位置相关）。</p>
+
+  <h2><span class="num">06</span> 过滤器 qft</h2>
+  <div class="tw"><table>
+    <tr><th>qft</th><th>与无过滤结果的重叠</th></tr>
+    <tr><td><code>+filterui:imagesize-large</code></td><td>5 / 35</td></tr>
+    <tr><td><code>+filterui:photo-photo</code></td><td>4 / 35</td></tr>
+    <tr><td><code>+filterui:color2-color</code></td><td>4 / 35</td></tr>
+    <tr><td><code>+filterui:face-face</code></td><td>0 / 35</td></tr>
+  </table></div>`,
+  notes: [
+    "<code>m</code> 的值是 HTML 转义后的 JSON（<code>&amp;quot;</code>），必须先反转义再解析。",
+    "片段里<strong>没有 <code>&lt;img&gt;</code></strong>，缩略图由前端脚本按 <code>turl</code> 注入 —— 不要找 <code>img[src]</code>。",
+    "<code>desc</code> 用私有区字符 <code>U+E000</code>/<code>U+E001</code> 包裹高亮词（34/35 条含）；直接输出是豆腐块，需剥离或转 <code>&lt;mark&gt;</code>。",
+    "越界不减到空：<code>first=1000</code> 仍返回 11 条尾部残余，判「到底」要看条数为 0 或重叠率。",
+    "<code>/images/search</code> 的 <code>first</code> 被忽略（永远首批 35 条，英文市场 25 条）；该页的用途是拿 <code>IG</code> 与配置，不是拿数据。",
+    "缩略图域名有 <code>ts{1..4}.mm.bing.net</code> 与 <code>ts{n}.explicit.bing.net</code>（内容分级子域，本样本 4/35）。"
+  ],
+  compliance: `<code>robots.txt</code>：<code>Disallow: /images/async?</code>、<code>/images/search?</code>、<code>/th?</code>。技术上可复现分页 ≠ 被允许自动化采集。`
+},
+
+/* ============ Bing · 联想 ============ */
+"bing-suggest": {
+  group: "Bing", label: "输入联想",
+  title: "输入联想",
+  sub: "两个端点：一个声明 application/json 却返回 HTML 片段，一个是标准的 OpenSearch JSON。按 Content-Type 选解析器会踩坑。",
+  status: { l: "ok", t: "可用" },
+  method: "GET", url: "https://cn.bing.com/AS/Suggestions",
+  src: "bing/suggest.md",
+  params: [
+    ["qry", "是「, 」已输入文本"],
+    ["pt", "是「, 」输入位置，如 <code>page.home</code> / <code>page.result</code>"],
+    ["mkt", "是「, 」市场，如 <code>zh-CN</code>（缺失返回 400）"],
+    ["cp", "是「, 」光标位置，等于 <code>len(qry)</code>（缺失返回 400）"],
+    ["cvid", "是「, 」会话内查询 ID，16 位十六进制，可随手生成"],
+    ["query", "—", "<code>/OSJSON.aspx</code> 用这个名字：<code>?query=cat&amp;form=OSDJAS</code>"]
+  ],
+  headers: `User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36`,
+  curl: `# HTML 片段（Content-Type 却是 application/json）
+curl -sS 'https://cn.bing.com/AS/Suggestions?pt=page.home&mkt=zh-CN&qry=cat&cp=3&cvid=1A2B3C4D5E6F'
+
+# 真 JSON（OpenSearch 兼容）
+curl -sS 'https://cn.bing.com/OSJSON.aspx?query=cat&form=OSDJAS'`,
+  responseTag: "两个端点的返回",
+  response: `<!-- /AS/Suggestions -->
+<ul class="sa_drw" id="sa_ul" role="listbox" data-priority="2" aria-label="建议">
+  <li class="sa_sg" role="option" id="sa_5006"
+      url="/search?q=catti&amp;qs=MT&amp;pq=cat&amp;sk=MT1&amp;sc=12-3&amp;cvid=1A2B3C4D5E6F&amp;FORM=QBLH"
+      query="catti" stype="MT" h="ID=autosuggest,5006.1">
+    <div class="sa_tm"><span class="sa_tm_text">cat<strong>ti</strong></span></div>
+  </li>
+  … 共 12 条
+</ul>
+
+// /OSJSON.aspx
+["cat",
+ ["cat","catti","cat vs dyj","catia下载","category","catena","catl",
+  "catti报名官网","catalog","cat paw","cathay pacific","catime"],
+ [],
+ [],
+ {"google:suggestrelevance":[1300,1299,1298,1297,1296,1295,1294,1293,1292,1291,1290,1289]}]`,
+  extra: `<h2><span class="num">04</span> 两个端点的差异</h2>
+  <div class="tw"><table>
+    <tr><th></th><th><code>/AS/Suggestions</code></th><th><code>/OSJSON.aspx</code></th></tr>
+    <tr><td>Content-Type</td><td><code>application/json</code></td><td><code>application/json</code></td></tr>
+    <tr><td>实际内容</td><td>HTML <code>&lt;ul&gt;</code> 片段</td><td>真 JSON</td></tr>
+    <tr><td>条数</td><td>12（zh-CN）/ 10（en-US）</td><td>12</td></tr>
+    <tr><td>高亮</td><td>有（<code>&lt;strong&gt;</code>）</td><td>无</td></tr>
+    <tr><td>可直接跳转的 URL</td><td>有（<code>li[url]</code>）</td><td>无</td></tr>
+    <tr><td>空输入</td><td>返回另一套容器 <code>div.sa_drw_zis</code>（热门推荐）</td><td>返回当日热搜词</td></tr>
+  </table></div>
+  <p>空输入时两个端点都<strong>不会</strong>返回空数组 —— 写死的解析器会静默拿到错结构。</p>`,
+  notes: [
+    "<code>stype</code> 取值实测 <code>MT</code> / <code>FT</code> / <code>LT</code>，语义未公开，未验证。",
+    "<code>li[url]</code> 里的 <code>&amp;amp;</code> 需反转义后才能当参数用。",
+    "<code>OSJSON</code> 的下标 <code>[2]</code>（描述）与 <code>[3]</code>（URL）在本端点恒为空数组。"
+  ],
+  compliance: `这两个端点未在 <code>robots.txt</code> 中被逐条点名，但站点整体对通配代理的规则仍然适用。`
+},
+
+/* ============ Bing · 相关查询 ============ */
+"bing-related": {
+  group: "Bing", label: "相关查询",
+  title: "相关查询（JSON）",
+  sub: "这批端点里唯一真正的结构化搜索数据。契约反直觉：必须带 Referer，但 Accept 不能声明 application/json。",
+  status: { l: "ok", t: "可用" },
+  method: "GET", url: "https://cn.bing.com/instantsearch/getquerylist",
+  src: "bing/related-queries.md",
+  params: [
+    ["query", "是「, 」查询词"],
+    ["Referer", "头", "<strong>必须带</strong>，任意站内路径即可；缺了返回 403 或 404"],
+    ["Accept", "头", "<strong>不能是</strong> <code>application/json</code>（会 404），用 <code>*/*</code> 或不设"]
+  ],
+  headers: `User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36
+Accept: */*
+Referer: https://cn.bing.com/search?q=cat`,
+  curl: `curl -sS 'https://cn.bing.com/instantsearch/getquerylist?query=cat' \\
+  -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36' \\
+  -H 'accept: */*' \\
+  -e 'https://cn.bing.com/search?q=cat'`,
+  responseTag: "json",
+  response: `{
+  "QueryList": [
+    { "CandicateQuery": "catia官方下载官网", "Score": 0.74052685, "ModelResolver": null },
+    { "CandicateQuery": "catia是什么软件",  "Score": 0.29035133, "ModelResolver": null },
+    { "CandicateQuery": "cat5e",            "Score": 0.2802706,  "ModelResolver": null },
+    { "CandicateQuery": "cat6是什么线",      "Score": 0.25187534, "ModelResolver": null }
+  ],
+  "Extension": { "trueSize": "4" },
+  "ModelResolver": {}
+}`,
+  extra: `<h2><span class="num">04</span> 请求头契约（实测矩阵）</h2>
+  <div class="tw"><table>
+    <tr><th>请求</th><th>结果</th></tr>
+    <tr><td>不带任何自定义头</td><td>403，空体</td></tr>
+    <tr><td><code>Accept: */*</code>，无 Referer</td><td>404，70 KB HTML 外壳</td></tr>
+    <tr><td><code>Accept: */*</code> + Referer</td><td><strong>200</strong>，374 字节 JSON</td></tr>
+    <tr><td><code>Accept: application/json</code> + Referer</td><td>404，同样 70 KB HTML</td></tr>
+  </table></div>
+  <p>越是「正确」地做内容协商，越拿不到数据：声明 JSON 的 Accept 会被路由到静态处理分支。</p>`,
+  notes: [
+    "字段名拼写就是 <code>CandicateQuery</code>（服务端原文，不是 Candidate），照抄，不要纠正。",
+    "<code>Extension.trueSize</code> 是<strong>字符串</strong>（<code>\"4\"</code>），强类型语言里 <code>&gt; 0</code> 会比较失败。",
+    "英文查询返回 <code>{}</code>（顶层空对象，没有 <code>QueryList</code> 键），必须判空后再取。"
+  ],
+  compliance: `与 <code>/search</code> 同域，站点对通配代理的规则同样适用。`
+},
+
+/* ============ 百度 · Web ============ */
+"baidu-web": {
+  group: "百度", label: "Web 搜索",
+  title: "Web 搜索",
+  sub: "curl 被 302 到图形验证码，真实浏览器 200 正常。这个对照证明判定依据是客户端环境，不是 IP。",
+  status: { l: "err", t: "curl 被拦" },
+  method: "GET", url: "https://www.baidu.com/s",
+  src: "baidu/web.md",
+  params: [
+    ["wd", "是「, 」查询词，URL 编码"],
+    ["ie", "否「, 」输入编码，<code>utf-8</code> / <code>gbk</code>"],
+    ["rn", "否「, 」每页条数。<strong>未验证</strong>：未取得结果页"],
+    ["pn", "否「, 」起始偏移。<strong>未验证</strong>，原因同上"],
+    ["tn", "否「, 」结果页模板，如 <code>baiduhome_pg</code>。<strong>未验证</strong>"]
+  ],
+  headers: `User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36
+Referer: https://www.baidu.com/
+Accept: text/html,application/xhtml+xml
+Accept-Language: zh-CN,zh;q=0.9`,
+  curl: `curl -sS -D - -o /dev/null \\
+  -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36' \\
+  -e 'https://www.baidu.com/' \\
+  'https://www.baidu.com/s?wd=test'`,
+  responseTag: "http",
+  response: `HTTP/1.1 302 Found
+Location: https://wappass.baidu.com/static/captcha/tuxing_v2.html?&logid=8955532809027633370
+          &ak=c27bbc89afca0463650ac9bde68ebe06
+          &backurl=https%3A%2F%2Fwww.baidu.com%2Fs%3Fwd%3Dtest
+          &ext=x9G9QDmMXq%2FNo87…&signature=2d587565ad3cdea241df38605aec4664
+          &timestamp=1792895283
+Content-Type: text/html; charset=utf-8
+
+<!-- body 416 字节 -->
+<a href="https://wappass.baidu.com/static/captcha/tuxing_v2.html?&amp;logid=…">Found</a>.`,
+  extra: `<h2><span class="num">04</span> 同一 URL 在浏览器里</h2>
+  <div class="tw"><table>
+    <tr><th>项</th><th>值</th></tr>
+    <tr><td><code>location.href</code></td><td><code>https://www.baidu.com/s?wd=test</code></td></tr>
+    <tr><td><code>document.title</code></td><td><code>test_百度搜索</code></td></tr>
+    <tr><td><code>body.scrollHeight</code></td><td>3232（含异步模块）</td></tr>
+    <tr><td>正文开头</td><td>百度一下 百度首页设置登录 网页 图片 资讯 视频 …</td></tr>
+  </table></div>
+  <p>同一台机器、同一出口 IP，只是换了客户端。因此本仓库<strong>没有</strong>百度结果页的 HTML 结构记录 —— 拿不到真实结果页就不编造选择器。</p>`,
+  notes: [
+    "302 的 <code>Location</code> 每次都不同（<code>logid</code>/<code>ext</code>/<code>signature</code>/<code>timestamp</code> 变化），不可复用。",
+    "稳定取百度搜索结果唯一正当路径是官方 API，不是这个端点。"
+  ],
+  compliance: `<code>robots.txt</code>：<code>User-agent: *</code> → <code>Disallow: /</code>（165 行、16 个段；对 Baiduspider 等具名爬虫另有放行段）。`
+},
+
+/* ============ 百度 · 图片 ============ */
+"baidu-image": {
+  group: "百度「, label: 」图片搜索",
+  title: "图片搜索（JSON）",
+  sub: "浏览器实际请求的参数已完整记录；但正常响应结构在本环境取不到——curl 被 antiFlag 拒，headless 浏览器响应体为空。",
+  status: { l: "err", t: "antiFlag" },
+  method: "GET", url: "https://image.baidu.com/search/acjson",
+  src: "baidu/image.md",
+  params: [
+    ["tn", "是「, 」固定 <code>resultjson_com</code>，决定返回 JSON"],
+    ["word", "是「, 」查询词，URL 编码"],
+    ["pn", "是「, 」起始偏移。浏览器实测只对 <code>pn=30</code>、<code>pn=60</code> 发请求（首屏服务端渲染）"],
+    ["rn", "否「, 」每页条数，实测固定 30"],
+    ["gsm", "否", "<strong>等于 <code>pn</code> 的十六进制</strong>：30→<code>1e</code>、60→<code>3c</code>"],
+    ["ie", "否「, 」编码，<code>utf-8</code>"],
+    ["applid", "否", "19 位会话级应用 ID，由页面生成"],
+    ["fp / fr / ala / nojc / newReq", "否", "<code>result</code> / 空 / <code>0</code> / <code>0</code> / <code>1</code>"]
+  ],
+  headers: `User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/156.0.8078.47 Safari/537.36
+Referer: https://image.baidu.com/search/index?tn=baiduimage&word=%E7%8C%AB
+Accept: application/json, text/plain, */*`,
+  curl: `curl -sS \\
+  -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36' \\
+  -e 'https://image.baidu.com/' \\
+  'https://image.baidu.com/search/acjson?tn=resultjson_com&word=%E7%8C%AB&pn=30&rn=30&gsm=1e'`,
+  responseTag: "json",
+  response: `{"antiFlag":1,"message":"Forbid spider access","bfe_log_id":"10155720265341393354"}`,
+  extra: `<h2><span class="num">04</span> 响应头（值得注意的两条）</h2>
+  <div class="code"><div class="code-bar"><span class="tag">http</span><span class="spacer"></span><button class="copy" data-copy>复制</button></div><pre>HTTP/1.1 200 OK
+Content-Type: application/json
+Access-Control-Allow-Origin: https://image.baidu.com
+Access-Control-Allow-Credentials: true
+Bdqid: 7cc748a2122f5c47
+Lid: 7cc748a2122f5c47</pre></div>
+  <p>CORS 被锁定为同源站点，跨域页面拿不到 —— 这是正常配置，不是 bug。</p>
+
+  <h2><span class="num">05</span> 三种客户端三种结果</h2>
+  <div class="tw"><table>
+    <tr><th>客户端</th><th>结果</th></tr>
+    <tr><td>curl（完整浏览器 UA + Referer）</td><td>200 + <code>antiFlag:1</code>，83 字节</td></tr>
+    <tr><td>headless 浏览器（HeadlessChrome UA）</td><td>200，<strong>响应体 0 字节</strong></td></tr>
+    <tr><td>真实浏览器会话</td><td>正常数据（本仓库未取得其结构，不做推测）</td></tr>
+  </table></div>`,
+  notes: [
+    "<strong>首屏不走这个接口</strong>：打开 <code>/search/index?tn=baiduimage</code> 时首屏图片由服务端渲染进 HTML，接口从 <code>pn=30</code> 才开始用。",
+    "<code>antiFlag</code> 必须当失败处理：只判断 <code>status == 200</code> 的客户端会把拒绝当成功。",
+    "<code>gsm</code> 与 <code>pn</code> 的十六进制对应是两个样本吻合的观察，未做穷举验证。",
+    "未验证：<code>rn</code> 上限、<code>pn</code> 上限、<code>gsm</code> 缺失时的行为、尺寸/颜色过滤器参数。"
+  ],
+  compliance: `<code>image.baidu.com/robots.txt</code>：对 Baiduspider/Googlebot 等为 <code>Allow: /</code>，对 <code>User-agent: *</code> 为 <code>Disallow: /</code>。接口层再用 <code>antiFlag</code> 二次拦截 —— 意愿与技术两道门一致。`
+},
+
+/* ============ 百度 · 联想 ============ */
+"baidu-suggest": {
+  group: "百度「, label: 」输入联想",
+  title: "输入联想 · 两种格式",
+  sub: "sugrec 是纯 JSON（UTF-8）；su 是 JSONP + GBK（三个坑叠在一起）。要建议词就用前者。",
+  status: { l: "ok", t: "可用" },
+  method: "GET", url: "https://www.baidu.com/sugrec",
+  src: "baidu/suggest.md",
+  params: [
+    ["prod", "是「, 」产品线，<code>pc</code>"],
+    ["wd", "是「, 」已输入文本"],
+    ["ie", "否", "<code>utf-8</code>"],
+    ["cb", "—", "<code>/su</code> 端点用这个：回调函数名，<code>?wd=cat&amp;cb=cb</code>"]
+  ],
+  headers: `User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36
+Referer: https://www.baidu.com/`,
+  curl: `# 纯 JSON
+curl -sS -e 'https://www.baidu.com/' \\
+  'https://www.baidu.com/sugrec?prod=pc&wd=cat'
+
+# JSONP + GBK（必须转码）
+curl -sS -e 'https://www.baidu.com/' \\
+  'https://suggestion.baidu.com/su?wd=cat&cb=cb' | iconv -f gbk -t utf-8`,
+  responseTag: "json / javascript",
+  response: `// /sugrec  —— text/plain; charset=UTF-8, 1385 B
+{
+  "q": "cat",
+  "p": false,
+  "g": [
+    { "type": "sug", "sa": "s_1", "q": "catch",       "no_ai_sug": false },
+    { "type": "sug", "sa": "s_2", "q": "catia软件",    "no_ai_sug": false },
+    { "type": "sug", "sa": "s_3", "q": "cat怎么读音",  "no_ai_sug": false },
+    { "type": "sug", "sa": "s_4", "q": "cat中文翻译",  "no_ai_sug": false }
+    …共 10 条
+  ],
+  "slid": "…",
+  "queryid": "…"
+}
+
+// /su  —— text/javascript; charset=gbk, 160 B
+cb({q:"cat",p:false,s:["catch","cat中文翻译","catia软件","cat怎么读音",
+    "category","catch up","cater","catalog","catalogue","cathy"]});`,
+  extra: `<h2><span class="num">04</span> 字段</h2>
+  <div class="tw"><table>
+    <tr><th>字段</th><th>说明</th></tr>
+    <tr><td><code>g[].q</code></td><td>建议文本，固定 10 条</td></tr>
+    <tr><td><code>g[].type</code></td><td>样本恒 <code>sug</code></td></tr>
+    <tr><td><code>g[].sa</code></td><td>埋点标识 <code>s_1</code>…<code>s_10</code>，无业务含义</td></tr>
+    <tr><td><code>g[].no_ai_sug</code></td><td>是否抑制 AI 建议，样本恒 <code>false</code></td></tr>
+    <tr><td><code>slid</code> / <code>queryid</code></td><td>会话 / 查询 ID</td></tr>
+  </table></div>`,
+  notes: [
+    "<code>/su</code> <strong>不是合法 JSON</strong>：键名无引号、外层是函数调用、内容 GBK。三坑叠加。",
+    "<code>/sugrec</code> 的建议文本不带高亮；要位置信息只能用 Bing 的 <code>/AS/Suggestions</code>。",
+    "空输入行为未测，本条不写结论。"
+  ],
+  compliance: `<code>sugrec</code> 在 <code>www.baidu.com</code> 下，该站对通配代理为 <code>Disallow: /</code>。<code>suggestion.baidu.com/robots.txt</code> 返回 302 到错误页（该子域无独立规则），适用父域约束。`
+},
+
+/* ============ 360 · Web ============ */
+"360-web": {
+  group: "360", label: "Web 搜索",
+  title: "Web 搜索",
+  sub: "本次环境（curl 与真实浏览器）都被导向验证码页。记录的重点是「拦截长什么样」。",
+  status: { l: "err", t: "验证码" },
+  method: "GET", url: "https://www.so.com/s",
+  src: "360/web.md",
+  params: [
+    ["q", "是「, 」查询词，URL 编码"],
+    ["src", "否「, 」来源标记。被风控跳转时服务端写入 <code>src=captcha</code>"],
+    ["pn", "否「, 」页码。<strong>未验证</strong>：未取得结果页"],
+    ["ie", "否", "<code>utf-8</code>"]
+  ],
+  headers: `User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36
+Referer: https://www.so.com/
+Accept: text/html,application/xhtml+xml`,
+  curl: `curl -sS -D - -o /dev/null \\
+  -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36' \\
+  -e 'https://www.so.com/' \\
+  'https://www.so.com/s?q=test'`,
+  responseTag: "http",
+  response: `HTTP/1.1 302 Found
+Location: http://qcaptcha.so.com/?ret=https%3A%2F%2Fwww.so.com%2Fs%3Fq%3Dtest%26src%3Dcaptcha&tk=637949005982971707507298924113098
+Content-Length: 0`,
+  extra: `<h2><span class="num">04</span> 落地页（curl 与浏览器一致）</h2>
+  <div class="code"><div class="code-bar"><span class="tag">text</span><span class="spacer"></span><button class="copy" data-copy>复制</button></div><pre>请输入验证码以便正常访问
+网络或服务器异常
+您的IP是：49.235.105.51
+您使用的浏览器是：Mozilla/5.0 (X11; Linux x86_64) …</pre></div>
+  <p>页面 <code>&lt;title&gt;</code> 为 <code>访问异常页面</code>。拦截页把判定依据直接写在页面上：<strong>IP + 浏览器指纹</strong>。</p>`,
+  notes: [
+    "这是验证码拦截，不是参数错误 —— 换参数、补 Referer、换 UA 都不会改变结果。",
+    "本次真实浏览器访问同一 URL 也落到 <code>qcaptcha</code>，说明该出口 IP 整体处于风控状态。",
+    "因此本仓库<strong>没有</strong> 360 Web 结果页的 HTML 结构记录。"
+  ],
+  compliance: `<code>www.so.com/robots.txt</code>（全文 4 行）：<code>User-agent: *</code> → <code>Disallow: /s</code>、<code>/link</code>、<code>/brw</code>。`
+},
+
+/* ============ 360 · 图片 ============ */
+"360-image": {
+  group: "360", label: "图片搜索",
+  title: "图片搜索 · 唯一的 JSON 图片接口",
+  sub: "四家里唯一能直接吐出结构化图片数据的接口：单次 124 KB、22 个顶层键、38 个结果字段。但 list 是累积集合，不是单页增量。",
+  status: { l: "ok", t: "可用" },
+  method: "GET", url: "https://image.so.com/j",
+  src: "360/image.md",
+  params: [
+    ["q", "是「, 」查询词，URL 编码"],
+    ["pn", "建议", "<strong>不是页码，是「已加载条数」</strong>"],
+    ["rn", "建议「, 」请求条数。<strong>实测被忽略</strong>：30 与 60 返回条数差 ≤2"],
+    ["src", "否「, 」来源标记，<code>srp</code> 为结果页"]
+  ],
+  headers: `User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36
+Referer: https://image.so.com/
+Accept: */*
+# 响应 Content-Type 是 application/javascript（不是 application/json）`,
+  curl: `curl -sS \\
+  -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36' \\
+  -e 'https://image.so.com/' \\
+  'https://image.so.com/j?q=%E7%8C%AB&pn=0&rn=30&src=srp' -o so.json`,
+  responseTag: "json",
+  response: `{
+  "total": 1216,          // 会浮动（1216 / 1222 / 1244）
+  "end": false,
+  "sid": "8b6dcd93b079…",
+  "list": [
+    {
+      "id": "6a26067faa1f5a64a8a6ca217d25c510",
+      "title": "示例标题",
+      "width": "2048", "height": "1280",
+      "imgsize": "160KB", "imgtype": "JPEG",
+      "link": "http://p0.so.qhimg.com/t047d76cf…jpg",
+      "img":  "http://p0.so.qhimg.com/t047d76cf…jpg",
+      "thumb":  "https://p5.ssl.qhimgs1.com/t047d76cf…jpg",
+      "_thumb": "https://p5.ssl.qhimgs1.com/sdr/_240_/t047d76cf…jpg",
+      "thumbWidth": "384", "thumbHeight": "240",
+      "site": "p0.so.qhimg.com", "dspurl": "p0.so.qhimg.com",
+      "http": "p5.so.qhimg.com", "https": "p5.ssl.qhimgs1.com",
+      "imgkey": "t047d76cf…jpg", "self_key": "8ae8d5ad…jpg",
+      "index": "0", "source": "copyright_text_aigc",
+      "copyright_owner": "0", "p_cluster": "861"
+    }
+  ],
+  "boxresult": {}, "wordguess": [], "lastindex": 0
+}`,
+  extra: `<h2><span class="num">04</span> 分页语义（实测）</h2>
+  <div class="tw"><table>
+    <tr><th>请求</th><th>list 条数</th><th>index 首/末</th><th>与上一组重叠</th></tr>
+    <tr><td>pn=0&rn=30</td><td>85</td><td>0 / 49</td><td>—</td></tr>
+    <tr><td>pn=30&rn=30</td><td>176</td><td>0 / 140</td><td>85（全部包含）</td></tr>
+    <tr><td>pn=60&rn=30</td><td>234</td><td>0 / 140+</td><td>全部包含</td></tr>
+  </table></div>
+  <ul>
+    <li><code>list</code> 是<strong>累积集合</strong>，<code>pn=30</code> 的响应包含 <code>pn=0</code> 的全部结果。</li>
+    <li><code>pn</code> 增大时<strong>顺序会重排</strong>，两次响应前 3 条 <code>id</code> 不完全相同。</li>
+    <li>去重必须用 <code>id</code>（或 <code>self_key</code>），不能用数组位置；判断到底看 <code>end</code>。</li>
+  </ul>
+
+  <h2><span class="num">05</span> 关键字段</h2>
+  <div class="tw"><table>
+    <tr><th>字段</th><th>说明</th></tr>
+    <tr><td><code>id</code></td><td>32 位十六进制，<strong>去重键</strong></td></tr>
+    <tr><td><code>_thumb</code></td><td>带尺寸前缀的缩略图，列表场景用它</td></tr>
+    <tr><td><code>width</code> / <code>height</code> / <code>thumbWidth</code></td><td>都是<strong>字符串</strong>，不是数字</td></tr>
+    <tr><td><code>grpmd5</code> / <code>downurl</code> / <code>fixedSize</code> / <code>grpcnt</code></td><td>字符串化布尔 <code>"False"</code> —— <code>if (x)</code> 恒真</td></tr>
+    <tr><td><code>total</code></td><td>浮动 ±30，不能用来算页数</td></tr>
+  </table></div>`,
+  notes: [
+    "响应 <code>Content-Type</code> 是 <code>application/javascript</code>，别按 Content-Type 判断能否 JSON 解析。",
+    "图全部在 360 自家 CDN（<code>qhimg.com</code> / <code>qhimgs1.com</code>），热链风险低于 Bing，但生产环境仍应转存。",
+    "未验证：<code>q</code> 为空的行为、<code>pn</code> 上限、尺寸/颜色/类型过滤器参数名。",
+    "<code>index</code> 实测出现重复序列（<code>[0,0,0,1,0,2…]</code>），不要用作游标。"
+  ],
+  compliance: `<code>image.so.com/robots.txt</code>：<code>User-agent: *</code> → <code>Disallow: /j?</code>、<code>/i?</code>、<code>/z?</code>。<strong>本页记录的接口恰好被点名禁止</strong> —— 技术可达不等于允许自动化访问。`
+},
+
+/* ============ 360 · 联想 ============ */
+"360-suggest": {
+  group: "360", label: "输入联想",
+  title: "输入联想",
+  sub: "四家里最容易解析的一个：纯 JSON、UTF-8、无 JSONP 包裹、无高亮标记。",
+  status: { l: "ok", t: "可用" },
+  method: "GET", url: "https://sug.so.360.cn/suggest",
+  src: "360/suggest.md",
+  params: [
+    ["word", "是「, 」已输入文本，URL 编码（中英文均可）"]
+  ],
+  headers: `User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36
+Referer: https://www.so.com/
+# 响应 Content-Type: text/plain; charset=UTF-8`,
+  curl: `curl -sS \\
+  -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36' \\
+  -e 'https://www.so.com/' \\
+  'https://sug.so.360.cn/suggest?word=cat'`,
+  responseTag: "json",
+  response: `{
+  "errorcode": 0,
+  "ext": "nlpv=test_403",
+  "query": "cat",
+  "result": [
+    { "face": "", "word": "cat是什么意思" },
+    { "face": "", "word": "cat gpt" },
+    { "face": "", "word": "cat6是什么线" },
+    { "face": "", "word": "catalog.update.microsoft.com" },
+    { "face": "", "word": "catia是什么软件" }
+    …共 10 条
+  ],
+  "sleep": 21600,
+  "sp": "",
+  "src": "other",
+  "ssid": "29d71c0f1d9a4be8a7751f53ef64c6c2",
+  "version": "revise"
+}`,
+  extra: `<h2><span class="num">04</span> 字段</h2>
+  <div class="tw"><table>
+    <tr><th>字段</th><th>说明</th></tr>
+    <tr><td><code>errorcode</code></td><td><code>0</code> 为正常；非 0 时 <code>result</code> 可能缺失</td></tr>
+    <tr><td><code>result[].word</code></td><td>建议文本，<strong>固定 10 条</strong></td></tr>
+    <tr><td><code>result[].face</code></td><td>类型标记，样本恒为空串</td></tr>
+    <tr><td><code>sleep</code></td><td><code>21600</code>（6 小时），疑为缓存有效期，<strong>未验证</strong></td></tr>
+    <tr><td><code>ssid</code></td><td>会话 ID，32 位十六进制</td></tr>
+  </table></div>`,
+  notes: [
+    "中英文都返回 10 条；中文给完整短语（如「猫和老鼠动画片免费观看」），不是补全片段。",
+    "未验证：空 <code>word</code> 行为、条数是否可调、是否有拼音/纠错类型区分。"
+  ],
+  compliance: `<code>sug.so.360.cn</code> 未在该站 <code>robots.txt</code> 中单独列出；<code>www.so.com</code> 的 <code>User-agent: *</code> 段只禁 <code>/s</code>、<code>/link</code>、<code>/brw</code>，不含本端点。`
+},
+
+/* ============ 搜狗 · Web ============ */
+"sogou-web": {
+  group: "搜狗", label: "Web 搜索",
+  title: "Web 搜索",
+  sub: "302 到 /antispider/，curl 与真实浏览器一致。拦截页直接显示它看到的 IP 与验证会话号。",
+  status: { l: "err", t: "antispider" },
+  method: "GET", url: "https://www.sogou.com/web",
+  src: "sogou/web.md",
+  params: [
+    ["query", "是「, 」查询词，URL 编码"],
+    ["ie", "否", "<code>utf8</code> / <code>gbk</code>"],
+    ["page", "否「, 」页码。<strong>未验证</strong>：未取得结果页"]
+  ],
+  headers: `User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36
+Referer: https://www.sogou.com/
+Accept: text/html,application/xhtml+xml`,
+  curl: `curl -sS -D - -o /dev/null \\
+  -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36' \\
+  -e 'https://www.sogou.com/' \\
+  'https://www.sogou.com/web?query=test'`,
+  responseTag: "http",
+  response: `HTTP/1.1 302 Found
+Location: http://www.sogou.com/antispider/?m=1&antip=web_sh2&from=%2Fweb%3Fquery%3Dtest&suuid=1fc84ebf-3ff3-4c9b-b0a2-5116fd559696
+Content-Type: text/html; charset=utf-8
+
+<!-- body 295 字节 -->
+Redirecting to <a href="http://www.sogou.com/antispider/?m=1&amp;antip=web_sh2&amp;…">…</a>.`,
+  extra: `<h2><span class="num">04</span> 参数与落地页</h2>
+  <div class="tw"><table>
+    <tr><th>参数</th><th>说明</th></tr>
+    <tr><td><code>m</code></td><td><code>1</code>，跳转标记</td></tr>
+    <tr><td><code>antip</code></td><td>触发的规则名，本次 <code>web_sh2</code></td></tr>
+    <tr><td><code>from</code></td><td>原始请求路径（URL 编码）</td></tr>
+    <tr><td><code>suuid</code></td><td>验证会话 UUID，每次不同</td></tr>
+  </table></div>
+  <div class="code"><div class="code-bar"><span class="tag">text · /antispider/</span><span class="spacer"></span><button class="copy" data-copy>复制</button></div><pre>返回首页&gt;&gt;  IP：223.74.76.56  访问时间：2026.10.25 10:26:11  SourceVerifyCode：2998e5a7284c</pre></div>
+  <p>本次浏览器出口 <code>223.74.76.56</code> 与 curl 出口 <code>49.235.105.51</code> 不同 —— 沙箱多出口，这解释了为什么同一天不同工具结果会不一致。</p>`,
+  notes: [
+    "判定对象是 IP + 客户端环境，两者任一不合格都会跳 <code>antispider</code>。",
+    "本次 curl 与真实浏览器都被拦，因此<strong>没有</strong>搜狗结果页的 HTML 结构记录。"
+  ],
+  compliance: `<code>www.sogou.com/robots.txt</code>（520 行、15 个段）末尾：<code>User-agent: *</code> → <code>Disallow: /</code>。`
+},
+
+/* ============ 搜狗 · 图片 ============ */
+"sogou-image": {
+  group: "搜狗「, label: 」图片搜索",
+  title: "图片搜索（JSON）",
+  sub: "最容易误判的一种拒绝：HTTP 200、合法 JSON、结构规整，只有 status 与 data 暴露真相。",
+  status: { l: "err", t: "forbid" },
+  method: "GET", url: "https://pic.sogou.com/napi/pc/searchList",
+  src: "sogou/image.md",
+  params: [
+    ["query", "是「, 」查询词，URL 编码"],
+    ["mode", "是", "<code>1</code>（图片搜索模式）。其它取值未验证"],
+    ["start", "是「, 」起始偏移，<code>0</code> 起。步进应为 <code>xml_len</code>，<strong>未验证</strong>"],
+    ["xml_len", "是「, 」请求条数，本次 48"]
+  ],
+  headers: `User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36
+Referer: https://pic.sogou.com/
+Accept: application/json, text/plain, */*`,
+  curl: `curl -sS \\
+  -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36' \\
+  -e 'https://pic.sogou.com/' \\
+  'https://pic.sogou.com/napi/pc/searchList?mode=1&start=0&xml_len=48&query=%E7%8C%AB'`,
+  responseTag: "json",
+  response: `{"status":1,"info":"forbid","data":null}`,
+  extra: `<h2><span class="num">04</span> 为什么最难识别</h2>
+  <ul>
+    <li>状态码 200，<code>Content-Type: application/json</code>，结构规整。</li>
+    <li>只有 <code>status</code>（<code>1</code> = 拒绝，不是成功）与 <code>data: null</code> 暴露真相。</li>
+    <li>任何「200 就解析 <code>data</code>」的代码会在 <code>null</code> 上崩。</li>
+  </ul>
+  <p>页面侧观察：用 headless 浏览器打开 <code>pic.sogou.com/pics?query=猫</code> 时<strong>没有</strong>观察到对 <code>/napi/pc/searchList</code> 的请求 —— 首屏由服务端渲染，接口只用于后续加载。因此本仓库也没有它的正常响应样本。</p>`,
+  notes: [
+    "拒绝是确定性的：换 UA、补 Referer、改 <code>start</code> 都不会改变结果。",
+    "正常响应的字段结构<strong>未验证</strong>。网上流传的字段名本仓库不予采信、不予列出。"
+  ],
+  compliance: `<code>pic.sogou.com/robots.txt</code> 为白名单式：仅放行 <code>/imgcate/</code>、<code>/help/</code>、<code>/fuwu/</code>、<code>/cate/</code>、<code>/venus/</code>、<code>/index.html</code>，其余 Disallow，<strong>含 <code>/napi</code></strong>。`
+},
+
+/* ============ 搜狗 · 联想 ============ */
+"sogou-suggest": {
+  group: "搜狗「, label: 」输入联想",
+  title: "输入联想",
+  sub: "返回 200 但响应体是 0 字节，Content-Type 是 application/octet-stream。最安静的一种拒绝。",
+  status: { l: "err", t: "0 字节" },
+  method: "GET", url: "https://www.sogou.com/suggnew/ajajjson",
+  src: "sogou/suggest.md",
+  params: [
+    ["key", "是「, 」已输入文本"],
+    ["type", "是「, 」搜索类型，<code>web</code>"],
+    ["ori", "否", "<code>yes</code>，实测无影响"]
+  ],
+  headers: `User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36
+Referer: https://www.sogou.com/`,
+  curl: `curl -sS -D - \\
+  -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36' \\
+  -e 'https://www.sogou.com/' \\
+  'https://www.sogou.com/suggnew/ajajjson?key=cat&type=web'`,
+  responseTag: "http",
+  response: `HTTP/1.1 200 OK
+Content-Type: application/octet-stream
+Content-Length: 0`,
+  extra: `<h2><span class="num">04</span> 尝试过的变体</h2>
+  <div class="tw"><table>
+    <tr><th>请求</th><th>结果</th></tr>
+    <tr><td><code>?key=cat&amp;type=web</code></td><td>200，0 字节</td></tr>
+    <tr><td><code>?key=cat&amp;type=web&amp;ori=yes</code></td><td>200，0 字节</td></tr>
+    <tr><td><code>/suggnew/web?key=cat</code></td><td>404（3407 字节错误页）</td></tr>
+    <tr><td><code>/web-ajax/sugg?key=cat</code></td><td>404（同上）</td></tr>
+    <tr><td><code>/sug?key=cat</code></td><td>301</td></tr>
+  </table></div>
+  <p>结论：本次环境未取得搜狗联想数据。正常响应的结构本仓库没有样本，因此不列、不推测。</p>`,
+  notes: [
+    "0 字节 + 200 是最难排查的拒绝：没有错误码、没有错误文案，只有空。",
+    "判断依据与 <code>/web</code>、<code>/napi</code> 一致（IP + 客户端环境）。"
+  ],
+  compliance: `该端点位于 <code>www.sogou.com</code>，其 <code>robots.txt</code> 对通配代理为 <code>Disallow: /</code>。`
+}
+
+};
+
+(function () {
+  "use strict";
+
+  var view = document.getElementById("view");
+  var navEl = document.getElementById("nav");
+  var qEl = document.getElementById("q");
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    });
+  }
+
+  /* ---------- 侧栏 ---------- */
+  function buildNav() {
+    var html = "";
+    NAV.forEach(function (g) {
+      html += '<div class="grp">' + esc(g.group) + "</div>";
+      g.items.forEach(function (it) {
+        html += '<a class="item" href="#/' + it.id + '" data-id="' + it.id + '">' +
+          '<span class="dot ' + (it.status || "") + '"></span>' +
+          '<span class="lbl">' + esc(it.label) + "</span></a>";
+      });
+    });
+    navEl.innerHTML = html;
+  }
+
+  function markCurrent(id) {
+    [].forEach.call(navEl.querySelectorAll(".item"), function (a) {
+      if (a.dataset.id === id) a.setAttribute("aria-current", "page");
+      else a.removeAttribute("aria-current");
+    });
+  }
+
+  /* ---------- 片段 ---------- */
+  function section(title, inner) {
+    return '<section class="blk"><h2><span class="num">00</span>' + title + "</h2>" + inner + "</section>";
+  }
+
+  function codeBlock(tag, text) {
+    return '<div class="code"><div class="code-bar"><span class="tag">' + esc(tag) +
+      '</span><span class="spacer"></span><button class="copy" data-copy>复制</button></div>' +
+      "<pre>" + esc(text) + "</pre></div>";
+  }
+
+  function paramTable(rows) {
+    var body = rows.map(function (r) {
+      return "<tr><td><code>" + esc(r[0]) + "</code></td><td>" + r[1] + "</td><td>" + r[2] + "</td></tr>";
+    }).join("");
+    return '<div class="tw"><table><tr><th>参数</th><th>必填</th><th>说明</th></tr>' + body + "</table></div>";
+  }
+
+  function chips(meta) {
+    return '<div class="meta">' + meta.map(function (m) {
+      return '<span class="chip ' + (m.l || "") + '"><span class="dot"></span>' + esc(m.t) + "</span>";
+    }).join("") + "</div>";
+  }
+
+  /* ---------- 渲染 ---------- */
+  function render(id) {
+    var d = DOCS[id] || DOCS.overview;
+    var out = [];
+
+    out.push("<h1>" + esc(d.title) + "</h1>");
+    if (d.sub) out.push('<p class="sub">' + d.sub + "</p>");
+
+    var meta = (d.meta || []).slice();
+    if (d.status) meta.unshift({ l: d.status.l, t: d.status.t });
+    if (meta.length) out.push(chips(meta));
+
+    if (d.url) {
+      out.push('<div class="ep"><span class="verb">' + esc(d.method) + "</span>" +
+        '<span class="path">' + esc(d.url) + "</span></div>");
+    }
+
+    if (d.params) out.push(section("参数", paramTable(d.params)));
+    if (d.custom) out.push(d.custom);
+    if (d.headers) out.push(section("请求头", codeBlock("http", d.headers)));
+    if (d.curl) out.push(section("请求示例", codeBlock("bash", d.curl)));
+    if (d.response) out.push(section("返回示例", codeBlock(d.responseTag || "响应", d.response)));
+    if (d.extra) out.push(d.extra);
+    if (d.notes && d.notes.length) {
+      out.push(section("说明与限制", "<ul>" + d.notes.map(function (n) {
+        return "<li>" + n + "</li>";
+      }).join("") + "</ul>"));
+    }
+    if (d.compliance) out.push(section("合规状态", "<p>" + d.compliance + "</p>"));
+    if (d.src) {
+      out.push('<p class="hint">完整实验数据与更多细节：<a href="' + REPO + "/blob/main/" + d.src +
+        '" target="_blank" rel="noopener">' + d.src + "</a></p>");
+    }
+
+    view.innerHTML = out.join("");
+
+    // 统一给 h2 编号（数据里写死的编号会被覆盖，避免插入/删除后错位）
+    [].forEach.call(view.querySelectorAll("h2 > .num"), function (n, i) {
+      n.textContent = ("0" + (i + 1)).slice(-2);
+    });
+
+    document.getElementById("crumb-grp").textContent = d.group || "概览";
+    document.getElementById("crumb-lbl").textContent = d.label || "总览";
+    document.title = d.title + " · search-engine-endpoints";
+
+    markCurrent(id);
+    document.body.classList.remove("nav-open");
+    document.getElementById("menu").setAttribute("aria-expanded", "false");
+  }
+
+  /* ---------- 路由 ---------- */
+  function route() {
+    var id = (location.hash.replace(/^#\/?/, "") || "overview").trim();
+    render(id);
+    window.scrollTo(0, 0);
+    view.focus({ preventScroll: true });
+  }
+
+  /* ---------- 复制 ---------- */
+  document.addEventListener("click", function (e) {
+    var btn = e.target.closest("[data-copy]");
+    if (!btn) return;
+    var pre = btn.closest(".code").querySelector("pre");
+    var text = pre ? pre.textContent : "";
+    var done = function () {
+      var old = btn.textContent;
+      btn.textContent = "已复制";
+      btn.classList.add("done");
+      setTimeout(function () { btn.textContent = old; btn.classList.remove("done"); }, 1400);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, function () {});
+    } else {
+      var ta = document.createElement("textarea");
+      ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); done(); } catch (err) {}
+      document.body.removeChild(ta);
+    }
+  });
+
+  /* ---------- 侧栏筛选 ---------- */
+  qEl.addEventListener("input", function () {
+    var q = qEl.value.trim().toLowerCase();
+    var shown = 0;
+    [].forEach.call(navEl.querySelectorAll(".item"), function (a) {
+      var hit = !q || a.textContent.toLowerCase().indexOf(q) >= 0;
+      a.style.display = hit ? "" : "none";
+      if (hit) shown++;
+    });
+    [].forEach.call(navEl.querySelectorAll(".grp"), function (g) {
+      var any = false, n = g.nextElementSibling;
+      while (n && !n.classList.contains("grp")) {
+        if (n.classList && n.classList.contains("item") && n.style.display !== "none") { any = true; break; }
+        n = n.nextElementSibling;
+      }
+      g.style.display = any ? "" : "none";
+    });
+    if (!shown && q) navEl.setAttribute("data-empty", "1");
+    else navEl.removeAttribute("data-empty");
+  });
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "/" && document.activeElement !== qEl) { e.preventDefault(); qEl.focus(); qEl.select(); }
+    if (e.key === "Escape" && document.activeElement === qEl) { qEl.value = ""; qEl.dispatchEvent(new Event("input")); qEl.blur(); }
+    if (e.key === "Escape") {
+      document.body.classList.remove("nav-open");
+      document.getElementById("menu").setAttribute("aria-expanded", "false");
+    }
+  });
+
+  /* ---------- 主题 ---------- */
+  var themeBtn = document.getElementById("theme");
+  var saved = null;
+  try { saved = localStorage.getItem("see-theme"); } catch (err) {}
+  if (saved) document.documentElement.setAttribute("data-theme", saved);
+  themeBtn.addEventListener("click", function () {
+    var next = document.documentElement.getAttribute("data-theme") === "dark" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    try { localStorage.setItem("see-theme", next); } catch (err) {}
+  });
+
+  /* ---------- 移动端 ---------- */
+  document.getElementById("menu").addEventListener("click", function () {
+    var open = document.body.classList.toggle("nav-open");
+    this.setAttribute("aria-expanded", open ? "true" : "false");
+  });
+  document.getElementById("scrim").addEventListener("click", function () {
+    document.body.classList.remove("nav-open");
+    document.getElementById("menu").setAttribute("aria-expanded", "false");
+  });
+
+  window.addEventListener("hashchange", route);
+
+  buildNav();
+  route();
+})();
+</script>
+</body>
+</html>
