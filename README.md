@@ -79,6 +79,7 @@
 | 结构 | 各源字段各异，下游为每个源写分支 | **统一 schema**，`rank / score / engine / engines / type` 恒在 |
 | 去重 | 多是把几个数组拼起来 | URL 规范化（去 utm/spm/尾斜杠/锚点）+ **RRF 融合**，多引擎命中自动上浮 |
 | 异构源 | 只管 JSON，HTML 留给你 | 神马的 SSR HTML 在适配器内解析成同构 JSON，`<em>` 高亮已剥离、广告卡已剔除 |
+| 视频 | 只给标题和链接 | 封面 / 简介 / 时长 / 播放量进主结果；**视频直链与字幕由二次脚本现取**，不撑大 JSON |
 | AI 搜索 | 只给一段文本 | 秘塔给 `answer + thinking + citations[]`，引用 30 字段含 `refer_id`（对应正文角标） |
 | 依赖 | requests + bs4 + lxml | **纯标准库**，Python 3.9+ 直接跑 |
 | 排查 | 出错只有一句 traceback | `--fresh` 看各引擎原始结果、`--debug` 带堆栈、`engines[]` 报每引擎耗时与错误 |
@@ -88,9 +89,21 @@ python3 scripts/search.py "量子计算"                      # 网页：神马 
 python3 scripts/search.py "猫" --kind image --limit 40     # 图片：Bing + 360
 python3 scripts/search.py "量子计算" --kind bundle         # web + image + video + hot
 python3 scripts/search.py "什么是向量数据库" --kind ai --citations
+
+# B站详情单独二次取：直链 + 封面 + 简介 + 字幕
+python3 scripts/bili_detail.py BV1eN4y1w7SS --asr
 ```
 
-实测（2026-10-31）：`bundle` 四类并发 8 个引擎 4.4 秒；图片单轮 125 条；视频 47 条；热榜 88 条。
+实测（2026-10-31）：`bundle` 四类并发 8 个引擎 4.4 秒；图片单轮 125 条；视频 47 条；热榜 88 条；B站 ASR 52 秒视频约 20 秒出全片字幕。
+
+### 视频这块为什么拆成两步
+
+B站视频直链带时效（`deadline` 参数，几小时就废），字幕动辄几千行。把它们塞进搜索结果，一次 `--kind bundle` 就能膨胀到几 MB，而其中 90% 你用不上。
+
+所以主结果只留轻量字段（`title / cover / desc / duration / play / bvid`），需要某个视频的详情时再调 `bili_detail.py`：
+
+- **视频直链**：`playurl?fnval=16` 取 dash，`video[]` / `audio[]` 各自带 `baseUrl` 与 `backupUrl`
+- **字幕**：官方 CC 优先（`player/v2` → `subtitle_url`）；没有官方字幕时 `--asr` 走**必剪匿名 ASR**（下载最低码率音频 → ffmpeg 转 16k mp3 → 五步上传 → 轮询结果），`source` 字段会标 `official` 还是 `bcut`，不会冒充官方字幕
 
 **它不适合什么** —— 说清楚比说好听有用：
 
@@ -191,7 +204,7 @@ python3 test/test_parse.py
 ├── douyin/         抖音：README（联想 / 热搜可用，内容搜索需登录）
 ├── shenma/         神马：README（极速版搜索 + 热搜 JSON 网关）
 ├── metaso/         秘塔 AI：README（匿名 SSE 搜索 + 引用条目 + 全文）
-├── skill/          聚合搜索技能包（aggregate-search）
+├── skill/          聚合搜索技能包（aggregate-search：search.py / bili_detail.py / engines.py / normalize.py）
 ├── api.json        机器可读端点清单（8 引擎 / 29 端点，20 个可用）
 ├── llms.txt        LLM 索引
 ├── examples/       parse_images.py（零依赖解析器）

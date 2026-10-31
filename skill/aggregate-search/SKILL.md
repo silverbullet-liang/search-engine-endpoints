@@ -37,6 +37,7 @@ python3 scripts/search.py "什么是向量数据库" --kind ai --citations
 | 结果形态 | 各源字段各异，下游要为每个源写分支 | **统一 schema**，`rank / score / engine / engines / type` 恒在 |
 | 去重 | 多数只把多个数组拼起来 | URL 规范化（去 utm/spm/尾斜杠/锚点）+ **RRF 融合**，多引擎命中自动上浮 |
 | 异构源 | 只管 JSON 接口，HTML 源留给你 | 神马是 SSR HTML，脚本内部解析成同构 JSON，并剥离 `<em>` 高亮、剔除广告卡 |
+| 视频详情 | 只给标题和链接 | 直链、封面、简介在搜索结果里给轻量字段；字幕由二次脚本现取（官方 CC 优先，没有则走必剪匿名 ASR），不撑大主结果 |
 | AI 搜索 | 只给一段文本 | 秘塔给 `answer + thinking + citations[]`（30 字段，含 `refer_id` 对应正文角标） |
 | 依赖 | requests + bs4 + lxml | **纯标准库**（`urllib` + `re`），Python 3.9+ 直接跑 |
 | 可排查 | 出错只有一句 traceback | `--fresh` 看各引擎原始结果，`--debug` 带堆栈，`engines[]` 报每个引擎的耗时/条数/错误 |
@@ -105,7 +106,7 @@ python3 scripts/search.py "什么是向量数据库" --kind ai --citations
 
 **image**：`title` `image`（原图）`thumb` `page`（来源页）`width` `height` `format`
 
-**video**：`title` `url` `cover` `author` `play` `duration`（原始「分:秒」）`duration_sec` `pubdate` `bvid`
+**video**：`title` `url` `cover`（封面直链）`desc`（简介，截 300 字）`author` `play` `duration`（原始「分:秒」）`duration_sec` `pubdate` `bvid` `detail`（二次取详情的命令）
 
 **ai**：`question` `answer`（Markdown）`thinking`（思考链）`conversation`（会话链接）`resultId` `citations[]`
 　　citations 每项：`title` `url` `snippet` `site` `date` `author` `authority` `refer_id`
@@ -155,6 +156,56 @@ python3 scripts/search.py "什么是向量数据库" --kind ai --citations
 - B站 `result` 混有 `type:"ketang"`（bvid 为空），已过滤
 - 抖音 `word_list` 实测 48–49 条，`position` 从 1 开始
 - 神马 `data-total` 是匹配总数，不等于本页条数
+
+## B站视频详情（二次请求）
+
+搜索只返回轻量字段（标题 / 封面 / 简介 / 时长 / 播放量）。视频直链带时效、字幕动辄几千行，全塞进搜索结果会让 JSON 膨胀到几 MB —— 所以详情单独一个脚本按需取：
+
+```bash
+python3 scripts/bili_detail.py BV1eN4y1w7SS            # 直链 + 封面 + 简介 + 官方字幕
+python3 scripts/bili_detail.py BV1eN4y1w7SS --asr      # 没有官方字幕时，走必剪匿名 ASR
+python3 scripts/bili_detail.py BV1eN4y1w7SS --page 2   # 多 P 视频取第 2 P
+```
+
+输出：
+
+```json
+{
+  "bvid": "BV1eN4y1w7SS", "aid": 0, "cid": 0,
+  "title": "...", "desc": "...", "cover": "https://i0.hdslb.com/...",
+  "duration": 1073, "owner": "...", "pubdate": 0,
+  "pages": [{"page": 1, "cid": 0, "part": "...", "duration": 1073}],
+  "has_subtitle": false,
+  "streams": {
+    "quality": 32,
+    "accept": ["高清 1080P60", "高清 1080P", "..."],
+    "video": [{"id": 32, "codec": "avc1.640033", "width": 1920, "height": 1080,
+               "bandwidth": 433188, "url": "https://upos-....bilivideo.com/....m4s?...", "backup": null}],
+    "audio": [{"id": 30216, "codec": "mp4a.40.2", "bandwidth": 65999, "url": "...", "backup": null}],
+    "durl": []
+  },
+  "subtitles": {
+    "source": "bcut",
+    "lan": "zh", "lan_doc": "必剪自动识别",
+    "cues": [{"from": 0.5, "to": 2.1, "text": "..."}]
+  },
+  "note": "直链带时效，播放前请现取"
+}
+```
+
+### 字幕的两条路
+
+1. **官方 CC**：`player/v2` → `subtitle.subtitles[]` → 取 `subtitle_url`（JSON，`body[].from/to/content`）。优先选 `lan` 以 `zh` 开头的轨。
+2. **必剪匿名 ASR**（无官方字幕时，`--asr` 开启）：下载最低码率音频流 → ffmpeg 转 16k 单声道 mp3 → 必剪 `rubick-interface` 五步（create → 分片 PUT 取 Etag → complete → task → 轮询 result）→ `utterances[]` 转成同结构的 `cues`。
+
+`source` 字段会明确写 `official` 还是 `bcut`，不会把 ASR 结果冒充官方字幕。
+
+### 几个要注意的点
+
+- **`--max-audio` 默认 1800 秒**：超长音频会被拒绝，这是对 ASR 服务的保护（一个 40 小时的合集上传上去既慢又不礼貌）。确实需要时手动放大。
+- **直链有时效**（`deadline` 参数，通常几小时），存下来隔天再播会 403。要缓存就缓存 `bvid`，播放前重新调一次。
+- **下载用 ffmpeg 直拉**，带页面级 `Referer: https://www.bilibili.com/video/<bvid>/`。用裸 urllib 抓 CDN 偶发 403 —— 防盗链校验的就是页面 Referer。
+- **必须带 `buvid3`**：`view` / `playurl` / `player` 三个接口在没有 cookie 时返回 412，脚本会先访问一次首页取。
 
 ## 扩展新引擎
 

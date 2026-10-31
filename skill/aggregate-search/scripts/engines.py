@@ -222,12 +222,15 @@ def bilibili_video(query, pages=1, limit=50, timeout=12, **kw):
                 "title": strip_tags(it.get("title", "")),
                 "url": "https://www.bilibili.com/video/" + it["bvid"],
                 "cover": ("https:" + pic) if pic.startswith("//") else pic,
+                "desc": strip_tags(it.get("description", ""))[:300],
                 "author": it.get("author", ""),
                 "play": it.get("play"),
                 "duration": dur,
                 "duration_sec": secs,
                 "pubdate": it.get("pubdate"),
                 "bvid": it["bvid"],
+                # 直链与字幕体积大、且带时效，用二次脚本现取
+                "detail": f"python3 scripts/bili_detail.py {it['bvid']} --asr",
             })
             if len(out) >= limit:
                 return out
