@@ -281,19 +281,21 @@ const NAV = [
     { id: "douyin-hot",     label: "热搜榜",   status: "ok" },
     { id: "douyin-search",  label: "内容搜索", status: "err" } ] },
   { group: "神马", items: [
-    { id: "shenma-web", label: "Web 搜索", status: "err" } ] },
+    { id: "shenma-web", label: "极速版搜索", status: "ok" },
+    { id: "shenma-hot", label: "热搜 JSON", status: "ok" } ] },
   { group: "秘塔 AI", items: [
-    { id: "metaso-api", label: "API 接口", status: "err" } ] }
+    { id: "metaso-api", label: "匿名搜索", status: "ok" },
+    { id: "metaso-ref", label: "引用条目", status: "ok" } ] }
 ];
 
 const DOCS = {
 
 /* ============ 总览 ============ */
 overview: {
-  group: "概览「, label: 」总览",
-  title: "四家搜索引擎的公开端点，实测一遍",
-  sub: "Bing / 百度 / 360 / 搜狗 的 Web 搜索、图片搜索、输入联想端点：请求方式、请求头、返回结构，以及拒绝响应长什么样。全部数据来自 2026-10-25 的匿名会话实测。",
-  meta: [{ l: "info", t: "14 个端点" }, { l: "info", t: "2026-10-25 实测" }, { l: "", t: "非官方 · 仅文档" }],
+  group: "概览", label: "总览",
+  title: "八家搜索引擎的公开端点，实测一遍",
+  sub: "Bing / 百度 / 360 / 搜狗 的 Web、图片、联想端点，哔哩哔哩 / 抖音 / 神马 的搜索与榜单，秘塔 AI 的匿名流式接口：请求方式、请求头、真实字段值，以及拒绝响应长什么样。全部数据来自 2026-10-25 至 10-31 的匿名会话实测。",
+  meta: [{ l: "ok", t: "20 个可用端点" }, { l: "info", t: "29 个端点已登记" }, { l: "info", t: "2026-10-31 实测" }],
   custom: `
   <div class="grid">
     <div class="card"><div class="n">Bing</div><div class="t">唯一可分页</div><div class="d">/images/async 支持 first 偏移，带会话 Cookie 可翻到第 N 条；Web 结果页只给首页 10 条。</div></div>
@@ -1206,12 +1208,12 @@ Content-Length: 0`,
   group: "概览", label: "给 AI 用",
   title: "怎么把这套东西喂给模型",
   sub: "三个交付物分别面向三种消费方式：人读、程序读、模型读。",
-  meta: [{ l: "ok", t: "14 个可用端点" }, { l: "info", t: "25 个端点已登记" }],
+  meta: [{ l: "ok", t: "20 个可用端点" }, { l: "info", t: "29 个端点已登记" }],
   custom: `
   <h2><span class="num">01</span> 三个交付物</h2>
   <div class="tw"><table>
     <tr><th>文件</th><th>给谁</th><th>怎么用</th></tr>
-    <tr><td><a href="https://silverbullet-liang.github.io/search-engine-endpoints/api.json" target="_blank" rel="noopener">api.json</a></td><td>程序 / Agent</td><td>8 引擎、25 端点的结构化清单：<code>available</code>、参数、字段类型、翻页方式、坑。<strong>可直接当 tool 目录读</strong></td></tr>
+    <tr><td><a href="https://silverbullet-liang.github.io/search-engine-endpoints/api.json" target="_blank" rel="noopener">api.json</a></td><td>程序 / Agent</td><td>8 引擎、29 端点的结构化清单：<code>available</code>、参数、字段类型、翻页方式、坑。<strong>可直接当 tool 目录读</strong></td></tr>
     <tr><td><a href="https://silverbullet-liang.github.io/search-engine-endpoints/llms.txt" target="_blank" rel="noopener">llms.txt</a></td><td>LLM 抓取入口</td><td>纯文本索引，50 行内说清「哪些能用、哪些不行、字段哪里会错」</td></tr>
     <tr><td>本页面</td><td>人</td><td>逐端点看参数、请求示例、返回示例</td></tr>
   </table></div>
@@ -1230,9 +1232,13 @@ Content-Length: 0`,
 4. 热榜  GET https://www.douyin.com/aweme/v1/web/hot/search/list/?aid=6383&amp;detail_list=1
    取 data.word_list[]：word / position / hot_value
 5. 联想  GET https://sug.so.360.cn/suggest?word={kw} → result[].word
+6. 神马网页  GET https://m.sm.cn/s/lite?q={kw}&amp;page={1..5}
+   返回 HTML，取 .qk-title-text（去 em 标签）+ a.qk-link-wrapper 的 href；过滤 .cpc-card 广告卡
+7. AI 搜索  POST https://metaso.cn/api/search/chat（Cookie: tid=任意 UUID，accept: text/event-stream）
+   SSE 流，取 choices[0].delta.content 拼正文；再 POST /api/search-result {"resultId": 流里的顶层 id} 取引用
 
 不可用（不要重试）：抖音内容搜索（需登录 2483）、百度网页（验证码）、
-360 网页（验证码）、搜狗全部（forbid）、神马（punish 壳）、秘塔（需 key）。
+360 网页（验证码）、搜狗全部（forbid）、神马普通 /s?q=（cloud_ip_bl 云 IP 黑名单）。
 
 调用原则：一次请求只取一批；需要更多结果时优先换关键词或换引擎。</pre></div>
 
@@ -1261,56 +1267,114 @@ Content-Length: 0`,
 ,
 /* ============ 神马 ============ */
 "shenma-web": {
-  group: "神马", label: "Web 搜索",
-  title: "Web 搜索 · 没有匿名入口",
-  sub: "实测结论：全部路径返回阿里 bixi 风控壳（HTTP 200 + action=deny），换 UA 无效。记下来是为了让你不用重复试。",
-  status: { l: "err", t: "punish 壳" },
-  method: "GET", url: "https://m.sm.cn/s",
+  group: "神马", label: "极速版搜索",
+  title: "极速版搜索 · 匿名可用",
+  sub: "普通 <code>/s?q=</code> 会被阿里 bixi 风控按云 IP 段拒绝（判定串里是 <code>cloud_ip_bl</code>），但同站极速版 <code>/s/lite</code> 走另一套后端，不做 WAF 拦截 —— 无 Cookie、无签名，直接返回结果页。",
+  status: { l: "ok", t: "匿名可用" },
+  method: "GET", url: "https://m.sm.cn/s/lite",
   src: "shenma/README.md",
-  params: [["q", "是", "查询词"], ["type", "否", "<code>image</code> 等，实测同样被拦"]],
-  headers: `User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1
-# 桌面 UA 与移动 UA 返回完全一致（1073 字节）`,
-  curl: `curl -sS 'https://m.sm.cn/s?q=test' \\
-  -A 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1'`,
-  responseTag: "html（1073 字节）",
-  response: `<a id="a-link"
-    href="https://bixi.alicdn.com/punish/punish:resource:template:baba:fcvsxmqtca_35282882.html
-          ?qrcode=5Vcj8o_wkBETi4Pl4giQow|auWQSA|WXqniw_0|cloud_ip_bl|0
-          &uuid=e55723f28ff09011138b83e5e20890a3
-          &action=deny&origin=https%3A%2F%2Fm.sm.cn%3A443%2Fs"></a>
+  params: [["q", "是", "关键词，UTF-8 URL 编码"], ["page", "否", "<b>唯一有效的翻页参数</b>，1–5；<code>pn</code>/<code>start</code>/<code>p</code> 传了也不翻页"], ["type", "否", "无此参数，分类卡片由服务端决定"]],
+  headers: `User-Agent: Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36
+Referer: https://m.sm.cn/
+# 首次响应会 Set-Cookie sm_sid / sm_uuid / XSRF-TOKEN，后续不带也照常返回`,
+  curl: `curl -sS 'https://m.sm.cn/s/lite?q=%E9%87%8F%E5%AD%90%E8%AE%A1%E7%AE%97&page=1' \\
+  -H 'User-Agent: Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Mobile Safari/537.36' \\
+  -o q.html`,
+  responseTag: "html（约 500 KB）",
+  response: `<div id="results" class="c-theme-olympic" data-total="42">
 
-&lt;script&gt;
-var cookie = "x5secdata=;maxAge=-100;expires=…;path=/;domain=.sm.cn;";
-document.cookie = cookie;
-document.getElementById("a-link").click();
-window._config_ = { "action": "deny", … };
-&lt;/script&gt;
-<!--rgv587_flag:sm-->`,
-  extra: `<h2><span class="num">04</span> 试过的路径</h2>
-  <div class="tw"><table>
-    <tr><th>路径</th><th>结果</th></tr>
-    <tr><td><code>GET /s?q=test</code></td><td>200，1073 B，punish 壳</td></tr>
-    <tr><td><code>GET /s?q=猫&amp;type=image</code></td><td>200，1073 B，同一份壳</td></tr>
-    <tr><td><code>GET so.m.sm.cn/s?q=test</code></td><td>200，1079 B，同一份壳</td></tr>
-    <tr><td><code>GET /su?wd=test</code></td><td>404（16 B）</td></tr>
-    <tr><td><code>GET sugs.m.sm.cn/web?q=test</code></td><td>200，3856 B，punish 注入脚本</td></tr>
+<div class="qk-title qk-title-size-xl qk-title-clamp-2 ...">
+  <div class="qk-title-content">
+    <a href="https://baike.baidu.com/item/%E9%87%8F%E5%AD%90%E8%AE%A1%E7%AE%97/11035661" class="qk-link-wrapper">
+      <div class="qk-title-text-wrapper">
+        <div class="qk-title-text qk-font-bold"><em>量子计算</em>-百度百科</div>
+      </div>
+    </a>
+  </div>
+</div>
+
+<div class="qk-paragraph ...">
+  <div class="qk-paragraph-content qk-clamp-2">
+    <div class="qk-paragraph-value">
+      <a href="https://baike.baidu.com/item/...">
+        <div class="qk-paragraph-text">遵循量子力学规律的计算模式</div>
+      </a>
+    </div>
+  </div>
+</div>
+
+<span class="qk-tag qk-tag-size-s qk-tag-color-primary ...">百科</span>`,
+  extra: `<div class="sect-h">结果字段</div><div class="tbl-wrap"><table>
+    <tr><th>字段</th><th>位置</th><th>说明</th></tr>
+    <tr><td>title</td><td><code>.qk-title-text.qk-font-bold</code></td><td>命中词被 <code>&lt;em&gt;</code> 包裹，需剥标签</td></tr>
+    <tr><td>url</td><td>同节点 <code>a.qk-link-wrapper[href]</code></td><td>落地页，多为 http(s) 外站</td></tr>
+    <tr><td>snippet</td><td><code>.qk-paragraph-text</code></td><td>摘要，同样带高亮</td></tr>
+    <tr><td>source_type</td><td><code>.qk-tag</code></td><td><code>百科</code> 等结果类型标签</td></tr>
+    <tr><td>site</td><td><code>.qk-source-item</code></td><td>站点名</td></tr>
+    <tr><td>total</td><td><code>#results[data-total]</code></td><td>匹配总数（实测 42 / 50）</td></tr>
+    <tr><td>is_ad</td><td>class 含 <code>cpc-card</code></td><td>广告卡，链接为 <code>adclick?disguise_click_url=</code>，<b>必须过滤</b></td></tr>
   </table></div>
-  <p><code>bixi.alicdn.com</code> 是阿里统一防爬（淘宝/UC/夸克同源），<code>cloud_ip_bl</code> 说明用到出口 IP 判定 —— 这也是换 UA 无效的原因。</p>
+  <div class="sect-h">同站还有一个 JSON 网关</div>
+  <div class="tbl-wrap"><table>
+    <tr><th>method</th><th>返回</th><th>用途</th></tr>
+    <tr><td><code>sc.news_top_list</code></td><td>23 KB JSON</td><td>热搜榜（含 <code>index</code>/<code>query</code>/<code>news_title</code>/<code>weight</code>）</td></tr>
+    <tr><td><code>tools.nav</code></td><td>977 B JSON</td><td>导航配置</td></tr>
+    <tr><td><code>policy.index</code></td><td>68 B JSON</td><td>声明元信息</td></tr>
+  </table></div>
+  <p class="muted">例：<code>GET https://api.m.sm.cn/rest?method=sc.news_top_list&amp;format=json&amp;hit=10</code> —— 顶层是 <code>{0:{…}, 1:{…}}</code> 的 dict，用 <code>list(d.values())</code> 取。</p>`,
+  notes: [
+    "广告卡混在结果容器里（<code>cpc-card</code>），不过滤会污染结果集。",
+    "<code>page</code> 之外的分页参数不报错也不生效，最容易被误判为「支持分页」。",
+    "<code>page≥6</code> 返回 320 KB 空壳（只有 App 下载引导），不是 404。",
+    "普通 <code>/s?q=</code> 的 <code>cloud_ip_bl</code> 是 IP 层判定：换 UA、换浏览器内核、补 <code>sec-ch-ua</code> 全部无效。"
+  ],
+  compliance: `<code>m.sm.cn/robots.txt</code> 对通配爬虫为 <code>Disallow: /*?*</code>（禁带查询参数的 URL）。本文记录端点契约与真实响应，请求频率应远低于人工浏览水平。`
+},
 
-  <h2><span class="num">05</span> 用这些替代</h2>
-  <div class="tw"><table>
-    <tr><th>需求</th><th>改用</th></tr>
-    <tr><td>图片（可分页）</td><td><a href="#/bing-image">Bing /images/async</a></td></tr>
-    <tr><td>图片（单次大结果集）</td><td><a href="#/360-image">360 image.so.com/j</a></td></tr>
-    <tr><td>联想</td><td><a href="#/baidu-suggest">百度 sugrec</a> / <a href="#/360-suggest">360 suggest</a></td></tr>
-    <tr><td>视频 / 热点</td><td><a href="#/bili-search">B站</a> / <a href="#/douyin-hot">抖音热搜</a></td></tr>
+
+"shenma-hot": {
+  group: "神马", label: "热搜 JSON",
+  title: "热搜榜 · 唯一的结构化接口",
+  sub: "神马有一个 JSON 网关 <code>api.m.sm.cn/rest</code>，用 <code>method=</code> 选接口。热搜榜一次 23 KB 结构化数据，是全站最好用的接口。",
+  status: { l: "ok", t: "匿名可用" },
+  method: "GET", url: "https://api.m.sm.cn/rest",
+  src: "shenma/README.md",
+  params: [["method", "是", "<code>sc.news_top_list</code> 热搜 / <code>tools.nav</code> 导航 / <code>policy.index</code> 声明"], ["format", "是", "固定 <code>json</code>"], ["start", "否", "起始序号，默认 0"], ["hit", "否", "条数，默认 10"], ["request_sc / _chain / request_app / channel_name", "否", "前端自用的链路标记，可省"]],
+  headers: `# 无须任何请求头，
+# UA 用普通 curl 默认值也能返回 JSON`,
+  curl: `curl -sS 'https://api.m.sm.cn/rest?method=sc.news_top_list&format=json&start=0&hit=10'`,
+  responseTag: "application/json（23 KB）",
+  response: `{
+  "0": {
+    "is_orion": "0",
+    "event_type": "general",
+    "weight": "1000.0",
+    "query": "日本访华代表团鞠躬谢罪",
+    "id": "new_85943",
+    "index": 1,
+    "title": "日本访华代表团鞠躬谢罪",
+    "news_title": "我国首次载人登月任务乘组计划公布！…",
+    "news_image": "https://cdn.sm.cn/temp/20261031081115-47dpg29qg8nm1yv96t1p7bnpzueo1ob5.png",
+    "order_lock": "1",
+    "hot_trend": "0"
+  },
+  "1": { "…": "…" }
+}`,
+  extra: `<div class="sect-h">字段</div><div class="tbl-wrap"><table>
+    <tr><th>字段</th><th>类型</th><th>说明</th></tr>
+    <tr><td>key</td><td>string</td><td><b>数字字符串</b>，顶层是 dict 不是数组 → <code>list(d.values())</code></td></tr>
+    <tr><td>index</td><td>int</td><td>排名，从 1 开始</td></tr>
+    <tr><td>query</td><td>string</td><td>检索词，可直接拼进 <code>/s/lite?q=</code></td></tr>
+    <tr><td>title / news_title</td><td>string</td><td>榜单标题 / 关联新闻标题</td></tr>
+    <tr><td>news_image</td><td>string</td><td>配图，<code>cdn.sm.cn</code> 直链</td></tr>
+    <tr><td>weight</td><td>string</td><td>热度权重，字符串化浮点</td></tr>
+    <tr><td>id / event_type / hot_trend / order_lock</td><td>string</td><td>条目 id / 分类 / 涨幅标记 / 位次锁定</td></tr>
   </table></div>`,
   notes: [
-    "HTTP 200 但内容是跳转壳，只看状态码的客户端会误判成功。",
-    "壳里的脚本会清掉 <code>x5secdata</code> cookie 再跳惩罚页，未通过的会话会被反复送回。",
-    "没有取得任何结果数据，因此本页没有字段表。"
+    "顶层是 <code>{0:{…}, 1:{…}}</code> 的 dict，直接遍历拿到的是键名不是对象。",
+    "<code>search.web</code> / <code>web.search</code> 不存在（返回 0 字节），别当成搜索接口。"
   ],
-  compliance: `<code>m.sm.cn/robots.txt</code>：<code>Allow: /</code> 但 <code>Disallow: /*?*</code>（禁止所有带查询参数的 URL）。`
+  compliance: "与极速版同域，公开 JSON 接口；控制频率，遵守站点服务条款。"
 }
 ,
 /* ============ B站 · 视频搜索 ============ */
@@ -1585,41 +1649,135 @@ Referer: https://www.douyin.com/`,
 ,
 /* ============ 秘塔 ============ */
 "metaso-api": {
-  group: "秘塔 AI", label: "API 接口",
-  title: "秘塔 AI 搜索 · 需要 Key",
-  sub: "AI 搜索这一类没有匿名入口。官方端点存在（405 证明只收 POST），但必须带 API Key。",
-  status: { l: "err", t: "需 Key" },
-  method: "POST", url: "https://metaso.cn/api/v1/search",
+  group: "秘塔 AI", label: "匿名接口",
+  title: "网页端匿名接口 · 免 Key",
+  sub: "网页版提问发出的真实请求，不需要 API Key、不需要登录。门槛只有一个 Cookie：<code>tid=&lt;任意 UUID&gt;</code> —— 实测自己生成一个 UUID 就能过，不带则返回 429。",
+  status: { l: "ok", t: "匿名可用" },
+  method: "POST", url: "https://metaso.cn/api/search/chat",
   src: "metaso/README.md",
-  params: [["Content-Type", "头", "<code>application/json</code>"], ["Authorization", "头", "<code>Bearer &lt;Key&gt;</code>"], ["body", "是", "无 Key 时无法反推 schema（三种键返回同一错误）"]],
+  params: [["model", "否", "<code>fast_thinking</code>（默认，带思考链）/ <code>fast</code> / <code>ds</code> / <code>pro</code>"], ["stream", "是", "必须 <code>true</code> 才拿到 SSE"], ["messages[].content", "是", "问题文本"], ["messages[].mode", "否", "<code>detail</code> 深度模式"], ["engineType", "否", "<code>空串</code> 综合 / <code>pdf</code> 论文 / <code>quanwang</code> 全网"], ["messages[].id/key/conversationId", "是", "<code>temp-&lt;uuid&gt;</code> 形式，前缀 <code>temp-</code> 标记本地未落库会话"], ["token", "否", "152 字符密文，实测<b>可省略</b>"]],
   headers: `Content-Type: application/json
-Authorization: Bearer <你的 Key>`,
-  curl: `curl -sS -X POST 'https://metaso.cn/api/v1/search' \\
-  -H 'Content-Type: application/json' \\
-  -H 'Authorization: Bearer <你的 Key>' \\
-  -d '{"question":"什么是向量数据库"}'`,
-  responseTag: "json",
-  response: `// 无 Key（HTTP 200，43 字节）
-{"errCode":2005,"errMsg":"API密钥无效"}
+accept: text/event-stream
+metaso-pc: pc
+Cookie: tid=<任意 UUID>
+Referer: https://metaso.cn/`,
+  curl: `TID=$(python3 -c 'import uuid;print(uuid.uuid4())')
 
-// 用 GET 请求同一路径（HTTP 405）
-{"timestamp":"2026-10-31T06:52:00.738+00:00","status":405,
- "error":"Method Not Allowed","path":"/api/v1/search"}`,
-  extra: `<h2><span class="num">04</span> 两个结论</h2>
-  <ul>
-    <li><strong>405 说明路径真实存在</strong>，只是方法不对 —— 确认端点的强信号。</li>
-    <li><strong>200 + <code>errCode 2005</code></strong>：三种不同 body（<code>question</code> / <code>q</code> / <code>query</code>）返回完全一致，说明先校验 Key，<strong>无法反推请求体结构</strong>。</li>
-  </ul>
-  <h2><span class="num">05</span> 不接 Key 的替代路线</h2>
-  <p>AI 搜索 = 检索 + 生成。检索用本仓库可用的接口，生成接任意模型：</p>
-  <div class="tw"><table>
-    <tr><th>步骤</th><th>用什么</th></tr>
-    <tr><td>检索</td><td><a href="#/bing-image">Bing 图片分页</a> / <a href="#/360-image">360 图片</a> / <a href="#/bili-search">B站视频</a> / <a href="#/douyin-hot">抖音热搜</a></td></tr>
-    <tr><td>正文</td><td>取结果里的 <code>arcurl</code> / <code>purl</code></td></tr>
-    <tr><td>生成</td><td>拼「标题 + 摘要 + 来源编号」交给模型，要求标注来源</td></tr>
+curl -sS -N -X POST 'https://metaso.cn/api/search/chat' \\
+  -H 'Content-Type: application/json' -H 'accept: text/event-stream' \\
+  -H 'metaso-pc: pc' -H "Cookie: tid=$TID" -H 'Referer: https://metaso.cn/' \\
+  -d '{"model":"fast_thinking","stream":true,
+       "messages":[{"id":"temp-1111","key":"temp-2222","conversationId":"temp-3333",
+                    "role":"user","content":"量子计算是什么","markdownContent":"量子计算是什么",
+                    "engineType":"","filter":"all","contentType":0,"mode":"detail"}],
+       "engineType":"","mode":"detail","filter":"all","outputStyle":"正常",
+       "outputLanguage":"中文","htmlNoDisplayEnable":true,"metaso-pc":"pc"}'`,
+  responseTag: "text/event-stream",
+  response: `data:{"data":{"id":"2116429832413700097"},"type":"conversation_init"}
+
+data:{"data":{"id":"2116429832443060224"},"type":"user_message_init"}
+
+data:{"data":{"id":"2116429832413700096"},"type":"response_message_init"}
+
+data:{"type":"heartbeat"}
+
+data:{"created":1793431168,"model":"metaso-qa-with-agent","id":"01a190d3-e511-7238-a7c5-f9a15ab88ff3","choices":[{"delta":{"role":"assistant","action":"搜索","reasoning_content":"\\n搜索 “人工智能 定义 发展现状 2025 2026”\\n"},"index":0}],"object":"chat.completion.qa_with_agent"}
+
+data:{"created":1793431168,"model":"metaso-qa-with-agent","id":"01a190d3-…","choices":[{"delta":{"role":"assistant","content":"**人工智能**（Artificial I"},"index":0}],"object":"chat.completion.qa_with_agent"}
+
+data:[DONE]`,
+  extra: `<div class="sect-h">事件类型</div><div class="tbl-wrap"><table>
+    <tr><th>type / object</th><th>载荷</th><th>说明</th></tr>
+    <tr><td><code>conversation_init</code></td><td>data.id</td><td>会话 id，可拼 <code>metaso.cn/chat/&lt;id&gt;</code></td></tr>
+    <tr><td><code>user_message_init</code> / <code>response_message_init</code></td><td>data.id</td><td>用户消息 / 回答消息 id</td></tr>
+    <tr><td><code>heartbeat</code></td><td>—</td><td>保活，约 1 条 / 2 秒</td></tr>
+    <tr><td><code>chat.completion.qa_with_agent</code></td><td>choices[0].delta</td><td>主体：<code>action</code> / <code>reasoning_content</code> / <code>content</code> / <code>took</code></td></tr>
+    <tr><td><code>error</code></td><td>{msg,code}</td><td>如实测超限：<code>msg Too Many Requests, code 429</code></td></tr>
+    <tr><td><code>[DONE]</code></td><td>—</td><td>流结束</td></tr>
+  </table></div>
+  <div class="sect-h">配套两个接口</div>
+  <div class="tbl-wrap"><table>
+    <tr><th>接口</th><th>作用</th><th>要点</th></tr>
+    <tr><td><code>POST /api/search-result</code></td><td>取引用条目</td><td>body <code>resultId = 上面流里的顶层 id</code>；返回 <code>data.citations[]</code> 30 字段（title / link / snippet / author / site / authority / <b>display.refer_id</b>…）</td></tr>
+    <tr><td><code>GET /api/knowledge/detail/&lt;id&gt;</code></td><td>网页全文</td><td>id 取 citations 的 <code>id</code> 或 <code>file_uuid</code></td></tr>
+    <tr><td><code>GET /?q=&lt;问题&gt;</code></td><td>URL 直接搜索</td><td>302 到 <code>/chat/&lt;id&gt;</code>，适合快速验证接口存活</td></tr>
   </table></div>`,
-  notes: ["网页端桌面要求扫码登录，匿名会话不发搜索请求。", "有 Key 后的返回结构本仓库没有实测样本，不写。"],
-  compliance: `<code>metaso.cn</code> 无 <code>robots.txt</code>（404）。`
+  notes: [
+    "<b>限流</b>：匿名有 IP 级频次上限，连续 6–8 次触发；超限时 HTTP 仍是 <b>200</b>，必须看流内 <code>code:429</code>。",
+    "同一 IP 下浏览器页面也会一起被限 —— 这是 IP 配额，不是客户端指纹。",
+    "<code>search-result</code> 与 <code>knowledge/detail</code> 不受该限流影响。",
+    "官方 <code>/api/v1/search</code> 是另一套东西，需 Key（无 Key 返回 <code>errCode 2005</code>），本页记的是网页端匿名接口。"
+  ],
+  compliance: "请求中不使用任何账号凭证，<code>tid</code> 为本地随机 UUID。控制频率远低于人工使用强度，遵守目标站点服务条款；接口随前端改版可能变化。"
+},
+
+
+"metaso-ref": {
+  group: "秘塔 AI", label: "引用条目",
+  title: "引用条目 · 30 字段",
+  sub: "AI 回答里的角标 <code>[1][2]</code> 来自这里。用上一步流里的顶层 <code>id</code> 当 <code>resultId</code> 换回结构化引用，不受搜索限流影响。",
+  status: { l: "ok", t: "匿名可用" },
+  method: "POST", url: "https://metaso.cn/api/search-result",
+  src: "metaso/README.md",
+  params: [["resultId", "是", "上一步 SSE 里 <code>chat.completion</code> 的顶层 <code>id</code>（形如 <code>01a190d3-e511-…</code>）"]],
+  headers: `Content-Type: application/json
+Cookie: tid=<任意 UUID>`,
+  curl: `curl -sS -X POST 'https://metaso.cn/api/search-result' \\
+  -H 'Content-Type: application/json' \\
+  -H "Cookie: tid=$(python3 -c 'import uuid;print(uuid.uuid4())')" \\
+  -d '{"resultId":"01a190d3-e511-7238-a7c5-f9a15ab88ff3"}'`,
+  responseTag: "application/json（59 KB，6 条）",
+  response: `{
+  "errCode": 0,
+  "errMsg": "success",
+  "data": {
+    "citations": [
+      {
+        "id": "9971e3ba-b937-4add-976d-6ff4b53ab6f4",
+        "title": "2026-2030年全球及中国汞监测行业技术与市场分析报告（GEPD7M5K1S2L）",
+        "link": "https://m.gepresearch.com/75/view-1108366-1.html",
+        "snippet": "▉ 报告目录 第一章 行业概述与研究方法 …",
+        "date": "2026年07月09日",
+        "publish_date_str": "2026-07-09",
+        "publish_date": 1783526400,
+        "author": "GEP Research",
+        "institution": "GEP Research",
+        "site": ["m.gepresearch.com", "gepresearch.com", "com"],
+        "authority": 4,
+        "article_type": "行业分析报告",
+        "language": "ZH",
+        "type": "chunk",
+        "chunk_id": 7,
+        "rank_policy_score": 0.8135359454154968,
+        "display": { "refer_id": 1 },
+        "origin_ids": [1],
+        "agent_qa_meta": { "query": "人工智能 定义 发展现状 2025 2026", "display": 0 }
+      }
+    ],
+    "not_citations": []
+  }
+}`,
+  extra: `<div class="sect-h">字段（实测全量）</div><div class="tbl-wrap"><table>
+    <tr><th>字段</th><th>说明</th></tr>
+    <tr><td>id / file_uuid</td><td>文档 id，可直接用于 <code>knowledge/detail</code></td></tr>
+    <tr><td>title / orig_title / orig_o_title</td><td>标题；<code>orig_*</code> 为未截断原文</td></tr>
+    <tr><td>link / ids</td><td>落地页；<code>ids</code> 为去重集合</td></tr>
+    <tr><td>snippet</td><td>命中片段（正文切片，可能很长）</td></tr>
+    <tr><td>date / publish_date_str / publish_date</td><td>展示日期 / ISO 日期 / 时间戳</td></tr>
+    <tr><td>author / authors / institution</td><td>作者与机构（<code>author_ori</code> 为原文）</td></tr>
+    <tr><td>site</td><td>域名拆分数组</td></tr>
+    <tr><td>authority</td><td>权威度（实测 4）</td></tr>
+    <tr><td>article_type / language / type / chunk_id</td><td>文章类型 / 语言 / 切片标记 / 切片序号</td></tr>
+    <tr><td>rank_policy_score / rank_policy_adjustment</td><td>排序分（0–1）/ 修正</td></tr>
+    <tr><td><b>display.refer_id</b></td><td><b>正文角标编号</b>，与 <code>[1]</code> 一一对应</td></tr>
+    <tr><td>agent_qa_meta</td><td>触发它的子查询</td></tr>
+  </table></div>
+  <p class="muted">配套：<code>GET https://metaso.cn/api/knowledge/detail/&lt;id&gt;</code> 取该文档全文。</p>`,
+  notes: [
+    "不受搜索的 IP 频次限制，连续请求正常返回。",
+    "把 <code>display.refer_id</code> 与正文里的 <code>[n]</code> 对齐，才能把答案落到具体链接。"
+  ],
+  compliance: "同源匿名接口，<code>tid</code> 为本地随机 UUID；控制频率，遵守站点服务条款。"
 }
 
 };

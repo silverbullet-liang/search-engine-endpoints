@@ -2,11 +2,11 @@
 
 > 8 家搜索引擎公开 HTTP 接口的匿名实测清单：Bing / 百度 / 360 / 搜狗 / 神马 / 哔哩哔哩 / 抖音 / 秘塔 AI。逐条标注可用性、参数语义、字段类型与踩坑点，全部实测于 2026-10-31。
 
-机器可读全量清单（JSON，含字段表与组合方案）：https://silverbullet-liang.github.io/search-engine-endpoints/api.json
+机器可读全量清单（JSON，8 引擎 / 29 端点 / 字段表 / 组合方案）：https://silverbullet-liang.github.io/search-engine-endpoints/api.json
 
-## 匿名可直接用（无需登录）
+## 匿名可直接用（无需登录、无需 Key）
 
-- [Bing 图片分页](https://github.com/silverbullet-liang/search-engine-endpoints/blob/main/bing/image.md)：`GET https://cn.bing.com/images/async?q=<kw>&first=<1-based>`，片段返回 35 条/批，`first` 支持翻页，按 `md5` 去重
+- [Bing 图片分页](https://github.com/silverbullet-liang/search-engine-endpoints/blob/main/bing/image.md)：`GET https://cn.bing.com/images/async?q=<kw>&first=<1-based>`，35 条/批，`first` 可翻页，按 `md5` 去重
 - [Bing 图片/网页联想](https://github.com/silverbullet-liang/search-engine-endpoints/blob/main/bing/suggest.md)：`/OSJSON.aspx?query=` 返回 OpenSearch JSON（12 条）
 - [Bing 相关查询](https://github.com/silverbullet-liang/search-engine-endpoints/blob/main/bing/related-queries.md)：`/instantsearch/getquerylist?query=`，必须带 `Referer`，`Accept` 不能是 `application/json`
 - [B站 视频搜索](https://github.com/silverbullet-liang/search-engine-endpoints/blob/main/bilibili/README.md)：`/x/web-interface/search/type?search_type=video&keyword=`，需先取 `buvid3` cookie，`page_size` 最大 50，`order=pubdate|click`
@@ -15,12 +15,17 @@
 - [360 图片 JSON](https://github.com/silverbullet-liang/search-engine-endpoints/blob/main/360/image.md)：`image.so.com/j?q=&pn=`，单次 85–234 条、38 字段，`list` 是累积集合
 - [360 联想](https://github.com/silverbullet-liang/search-engine-endpoints/blob/main/360/suggest.md)：`sug.so.360.cn/suggest?word=`
 - [百度 联想](https://github.com/silverbullet-liang/search-engine-endpoints/blob/main/baidu/suggest.md)：`www.baidu.com/sugrec?prod=pc&wd=`（JSON）；`suggestion.baidu.com/su`（JSONP + GBK）
+- **[神马 极速版搜索](https://github.com/silverbullet-liang/search-engine-endpoints/blob/main/shenma/README.md)**：`GET https://m.sm.cn/s/lite?q=<kw>&page=<1..5>`，SSR HTML，无 WAF、无签名；`page` 是唯一有效翻页参数
+- **[神马 热搜 JSON](https://github.com/silverbullet-liang/search-engine-endpoints/blob/main/shenma/README.md)**：`GET https://api.m.sm.cn/rest?method=sc.news_top_list&format=json`
+- **[秘塔 AI 搜索](https://github.com/silverbullet-liang/search-engine-endpoints/blob/main/metaso/README.md)**：`POST https://metaso.cn/api/search/chat`，SSE 流；只需 `Cookie: tid=<任意 UUID>`，无需 Key 与登录
+- **[秘塔 引用条目](https://github.com/silverbullet-liang/search-engine-endpoints/blob/main/metaso/README.md)**：`POST https://metaso.cn/api/search-result`，body `{"resultId":"<上一步流的顶层 id>"}`，返回 30 字段 citations
 
 ## 需要前提条件
 
 - Bing 图片跨批翻页：需要一个浏览器会话的 Cookie（单批无 Cookie 也可）
 - B站视频搜索：先 `GET https://www.bilibili.com/` 取 `buvid3`，否则 412
 - Bing 网页搜索：只能稳定取第 1 页 10 条（`first` 对外部客户端无效，浏览器内有效）
+- 秘塔 AI 搜索：`tid` 可为本地随机 UUID；匿名有 IP 级频次上限，超限流内返回 `code:429`（HTTP 仍是 200）
 
 ## 匿名不可用（附原因，避免重复试）
 
@@ -31,18 +36,19 @@
 | 百度图片 `acjson` | `{"antiFlag":1,"message":"Forbid spider access"}` |
 | 360 网页搜索 | 302 → `qcaptcha` 验证码（浏览器同样） |
 | 搜狗 网页 / 图片 / 联想 | 302 `antispider` / `info:"forbid"` / 200 + 0 字节 |
-| 神马 全部 | HTTP 200 但内容为阿里 `bixi` punish 壳（`action=deny`），换 UA 无效 |
-| 秘塔 AI | 官方 API 需 Key（`errCode 2005`）；网页端需扫码登录 |
+| 神马 普通 `/s?q=` | 阿里 `bixi` punish 壳，判定串含 `cloud_ip_bl`（云 IP 段黑名单），换 UA/内核无效 —— 改用 `/s/lite` |
+| 秘塔 官方 `/api/v1/search` | 需 API Key（`errCode 2005`）—— 改用网页端 `/api/search/chat` |
 
 ## 字段准确性要点（最容易踩的）
 
 - 抖音热搜 `data.word_list` 实测 **49 条**（不是整 50），`position` 从 1 开始，`hot_value` 是整数热度
 - B站 `duration` 是「分钟:秒」且**秒不补零**（`2398:14`、`189:9`），`pic` 是 `//` 开头的协议相对 URL
-- B站 `result` 混有 `type:"ketang"`（付费课堂），`bvid` 为空、`pubdate` 为 0，必须先过滤
-- B站标题 `title` 可能含 `<em class="keyword">` 高亮（13/20 条）
+- B站 `result` 混有 `type:"ketang"`（付费课堂），`bvid` 为空、`pubdate` 为 0，必须先过滤；标题含 `<em class="keyword">` 高亮（13/20 条）
 - 360 `list` 是**累积集合**，`pn=30` 的响应包含 `pn=0` 的全部；`rn` 被忽略；`"False"` 是字符串不是布尔
 - Bing 图片 `desc` 用 `U+E000`/`U+E001` 包裹高亮词；片段里没有 `<img>` 标签
 - 百度 `gsm` 等于 `pn` 的十六进制（30→`1e`、60→`3c`）
+- 神马 `api.m.sm.cn/rest` 顶层是 `{"0":{…},"1":{…}}` 的 **dict 不是数组**；极速版广告卡 `cpc-card` 混在结果里，链接是 `adclick?disguise_click_url=`
+- 秘塔 SSE 每帧是 `data:{…}`，正文在 `choices[0].delta.content`、思考链在 `delta.reasoning_content`；`search-result` 的 `display.refer_id` 才是正文 `[n]` 的对应关系
 
 ## 文档结构
 

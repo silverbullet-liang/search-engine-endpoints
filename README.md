@@ -4,11 +4,11 @@
 
 **在线浏览：https://silverbullet-liang.github.io/search-engine-endpoints/** ← 全部内容做成了单文件文档站，含参数表、请求头、请求示例与返回示例。
 
-所有结论来自 2026-10-25 的可复现实验。方法见 [bing/method.md](bing/method.md)。
+所有结论来自 2026-10-25 至 10-31 的可复现实验。方法见 [bing/method.md](bing/method.md)。
 
-> **非官方项目**。与 Microsoft、百度、360、搜狗均无关联，未获授权或背书。
+> **非官方项目**。与 Microsoft、百度、360、搜狗、哔哩哔哩、抖音、神马、秘塔均无关联，未获授权或背书。
 > 本仓库**不提供采集工具**，也不提供绕过验证码、伪造指纹、轮换 IP 的方法。
-> 使用前请读 [NOTICE.md](NOTICE.md)：里面是四家 `robots.txt` 与版权声明的原文，它们直接决定了哪些用法不可行。
+> 使用前请读 [NOTICE.md](NOTICE.md)。
 
 ---
 
@@ -28,15 +28,16 @@
 
 | | 哔哩哔哩 | 抖音 | 神马 | 秘塔 AI |
 |---|---|---|---|---|
-| **内容搜索** | **视频搜索可用**（需 buvid3） | 200 + `2483` 需登录 | `bixi` punish 壳 | 需 API Key |
-| **输入联想** | **可用**（带高亮区间） | **可用**（无需签名） | punish 脚本 | — |
-| **榜单/热榜** | **可用**（10 条） | **可用**（49 条 + 热度值） | — | — |
-| **返回格式** | JSON | JSON | — | JSON |
+| **内容搜索** | **视频搜索可用**（需 buvid3） | 200 + `2483` 需登录 | **极速版可用**（`/s/lite`，5 页） | **匿名 SSE 可用**（免 Key） |
+| **输入联想** | **可用**（带高亮区间） | **可用**（无需签名） | punish 脚本（`sugs` 子域被拦） | — |
+| **榜单/热榜** | **可用**（10 条） | **可用**（49 条 + 热度值） | **可用**（`api.m.sm.cn/rest` JSON） | — |
+| **引用条目** | — | — | — | **可用**（30 字段） |
+| **返回格式** | JSON | JSON | HTML + JSON | SSE + JSON |
 | **文档** | [bilibili/](bilibili/README.md) | [douyin/](douyin/README.md) | [shenma/](shenma/README.md) | [metaso/](metaso/README.md) |
 
 ¹ 百度 Web 结果页在**真实浏览器**里返回 200 正常结果，curl 则被 302 到验证码 —— 同一 IP、同一 URL，只有客户端不同。
 
-这八家里，**通用网页搜索没有一个能匿名稳定取到完整结果**；可用面集中在图片（Bing、360）、联想（四家）、热榜（B站、抖音）、视频（B站）。
+可匿名稳定取到结构化数据的，集中在：图片（Bing、360）、联想（百度、360、B站、抖音）、榜单（B站 10 条、抖音 49 条、神马热搜）、视频（B站）、**网页搜索（神马极速版 5 页）**、**AI 搜索（秘塔匿名 SSE）**。百度 / 360 / 搜狗的 Web 结果页仍是验证码。
 
 ---
 
@@ -44,9 +45,8 @@
 
 **1. 只有 Bing 把图片分页做成了"片段级接口"，也只有它能被外部客户端复现。**
 `/images/async` 返回一段可直接嵌入的 HTML，`first` 是 1-based 起始序号。带会话 Cookie 后 `first=1 / 36 / 71` 得到三批互不重叠的结果，且与页面上第 1/36/71 条精确对齐。`imgbf`、`dgState`、`IG`、`SFX` 等参数全部可剥离。
-其余三家的分页藏在文档级导航里，风控严格得多，外部客户端一律拿不到第二页。
 
-**2. 同一批"看起来是 200"的响应里，有四种完全不同的拒绝。**
+**2. 同一批"看起来是 200"的响应里，有五种完全不同的拒绝。**
 
 | 形态 | 出现位置 | 判据 |
 |---|---|---|
@@ -54,14 +54,15 @@
 | `302` → antispider | 搜狗 `/web` | `Location` 含 `/antispider/`，带 `antip=` |
 | `200` + `antiFlag:1` | 百度 `acjson` | `body["antiFlag"] == 1` |
 | `200` + `info:"forbid"` | 搜狗 `napi` | `body["status"] == 1`，`data` 为 `null` |
-| `200` + 0 字节 | 搜狗 `ajajjson` | `Content-Length: 0` |
+| `200` + punish 壳 | 神马 `/s?q=` | 1 KB 跳转页，`qrcode` 里带 `cloud_ip_bl` |
+| `200` + SSE `code:429` | 秘塔 `/api/search/chat` | **HTTP 200**，流内 `{"code":429,"type":"error"}` |
 
 只判断 `status == 200` 的客户端，会把这些全部当成成功。
 
-**3. "技术上能调通"与"被允许自动化访问"是两件事。**
-360 的 `image.so.com/j` 是四家里唯一能直接吐出结构化图片数据的接口（单次 124 KB、38 个字段），而它恰好被 `robots.txt` 的 `Disallow: /j?` 点名禁止。本仓库记录契约，不因此推荐使用。
+**3. 同一站点里，拦与不拦常常是两套后端。**
+神马 `GET /s?q=` 被 WAF 按云 IP 段拉黑（`cloud_ip_bl`），同域的 `GET /s/lite?q=` 却不经 WAF、直接返回 500 KB 结果页；秘塔网页端匿名可用，官方 `/api/v1/search` 却要 Key。**遇到"没接口"的结论，先把同站的其它路径枚举一遍。**
 
-**4. 这些端点没有版本、没有 SLA，且多数已不是"只读查询"。**
+**4. 这些端点没有版本、没有 SLA。**
 风控判定会随出口 IP、客户端指纹、时段变化。今天测通的，明天可能 302。所有数值都带日期与环境，请在自己的环境里复测后再采信。
 
 ---
@@ -72,7 +73,7 @@
 
 | 文件 | 用途 |
 |---|---|
-| [`api.json`](api.json) | 8 引擎、25 端点的结构化清单：`available`、参数、字段类型、翻页方式、坑。可直接当 tool 目录读 |
+| [`api.json`](api.json) | 8 引擎、29 端点的结构化清单：`available`、参数、字段类型、翻页方式、坑。可直接当 tool 目录读 |
 | [`llms.txt`](llms.txt) | 纯文本索引，五十行内说清「哪些能用、哪些不行、字段哪里会错」 |
 
 在线地址：
@@ -106,6 +107,26 @@
 三端点全部被拦，文档重点在"拒绝形态识别"。
 看点：`/napi` 返回 200 + 合法 JSON + `{"status":1,"info":"forbid","data":null}`，结构最规整、最容易被误判为成功。
 
+### [bilibili/](bilibili/README.md) · 哔哩哔哩
+
+视频搜索、联想、热搜三个端点，全部匿名可用。
+看点：`search/type` 与 `main/suggest` / `main/hotword` 不需要登录；视频搜索需先取一次 `buvid3`；`page_size` 最大 50；`order=pubdate|click` 实测生效。三个字段陷阱（`ketang` 混入、`<em>` 高亮、`duration` 是「分:秒」且秒不补零）见文档。
+
+### [douyin/](douyin/README.md) · 抖音
+
+联想与热搜免签名直接可用，内容搜索返回 `2483`「请先登录」。
+看点：`word_list` 实测 **49 条**（不是整 50），`position` 从 1 开始，`hot_value` 是整数热度。
+
+### [shenma/](shenma/README.md) · 神马
+
+**极速版搜索 `GET /s/lite?q=&page=1..5` 匿名可用**，无 Cookie、无签名；同站普通 `/s?q=` 被 `cloud_ip_bl` 拒绝。另有一个 JSON 网关 `api.m.sm.cn/rest`，`method=sc.news_top_list` 取热搜榜。
+看点：`page` 是唯一有效的翻页参数（`pn`/`start`/`p` 静默无效）；5 页封顶；广告卡 `cpc-card` 混在结果里必须过滤；热搜响应顶层是 `{"0":{…}}` 的 dict 不是数组。
+
+### [metaso/](metaso/README.md) · 秘塔 AI
+
+**网页端匿名接口免 Key 可用**：`POST /api/search/chat` 返回 SSE（思考链 + 正文），`POST /api/search-result` 取 30 字段引用条目，`GET /api/knowledge/detail/<id>` 取全文。
+门槛只有一个 `Cookie: tid=<任意 UUID>`（自己生成即可）；匿名有 IP 级频次限制，超限时 HTTP 仍是 200、流内返回 `code:429`。官方 `/api/v1/search` 需 Key，与这条链是两回事。
+
 ---
 
 ## 快速开始（离线，不联网）
@@ -119,7 +140,7 @@ python3 test/test_parse.py
 
 `parse_images.py` 只做两件事：发**一个**请求（或不发）、解析。没有翻页循环、没有并发、没有 Cookie 生成、没有指纹伪装。
 
-需要真实响应时，请自行按各家文档手动请求一次，并把节奏控制在自己能负责的范围内 —— 四家的 `robots.txt` 都对此有限制，详见 [NOTICE.md](NOTICE.md)。
+需要真实响应时，请自行按各家文档手动请求一次，并把节奏控制在自己能负责的范围内 —— 详见 [NOTICE.md](NOTICE.md)。
 
 ---
 
@@ -127,25 +148,25 @@ python3 test/test_parse.py
 
 ```
 .
-├── index.html      在线文档站（单文件、零依赖，GitHub Pages 部署）
+├── index.html      在线文档站（单文件、零依赖，GitHub Pages 部署，28 页）
 ├── bing/           Bing：7 篇（web / image / suggest / related-queries / fields / session / method）
 ├── baidu/          百度：README + web / image / suggest
 ├── 360/            360：README + web / image / suggest
 ├── sogou/          搜狗：README + web / image / suggest
 ├── bilibili/       哔哩哔哩：README（视频搜索 / 联想 / 热搜，全部可用）
 ├── douyin/         抖音：README（联想 / 热搜可用，内容搜索需登录）
-├── shenma/         神马：README（无可用接口 + 等价替代）
-├── metaso/         秘塔 AI：README（API 需 Key + 不接 Key 的路线）
-├── api.json        机器可读端点清单（8 引擎 / 25 端点）
+├── shenma/         神马：README（极速版搜索 + 热搜 JSON 网关）
+├── metaso/         秘塔 AI：README（匿名 SSE 搜索 + 引用条目 + 全文）
+├── api.json        机器可读端点清单（8 引擎 / 29 端点，20 个可用）
 ├── llms.txt        LLM 索引
 ├── examples/       parse_images.py（零依赖解析器）
 ├── samples/        脱敏片段样本
 ├── test/           离线自查（9 项）
-├── NOTICE.md       合规边界 + 各家 robots 原文 + 版权声明原文
+├── NOTICE.md       各家 robots 原文与版权声明原文
 └── README.md       本文件
 ```
 
-每家的三篇接口文档统一结构：**请求方式 → 请求头 → 请求示例 → 返回示例 → 字段说明 → 限制 → 合规状态**。
+每家的接口文档统一结构：**请求方式 → 请求头 → 请求示例 → 返回示例 → 字段说明 → 限制 / 坑**。
 
 ---
 
@@ -153,15 +174,8 @@ python3 test/test_parse.py
 
 | 项 | 值 |
 |---|---|
-| 日期 | 2026-10-25 |
-| 出口 | 中国（腾讯云 AS45090 等，沙箱多出口，不同请求可能走不同 IP） |
-| HTTP 客户端 | curl 8.14.1（OpenSSL 3.5.5，HTTP/2） |
-| 浏览器 | Chrome for Testing 156.0.8078.47（headless） |
-| 会话 | 全部为未登录的匿名访问 |
-| 地域跳转 | `www.bing.com` → `cn.bing.com`；百度/360/搜狗不跳转 |
-
-出口 IP 会影响风控结论（搜狗拦截页直接显示了 IP）。换网络环境请重新验证。
-
-## 许可
-
-文档与示例代码：[MIT](LICENSE)。被记录的搜索结果内容不属于本仓库。
+| 时间 | 2026-10-25 ~ 2026-10-31 |
+| 出口 | 中国大陆 |
+| 客户端 | curl 8.14.1 + Chrome for Testing 156 headless |
+| 会话 | 全部匿名（未登录、无 Key） |
+| 复现 | 每个数值都标注了触发条件与失败形态 |

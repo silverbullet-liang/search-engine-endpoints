@@ -14,6 +14,205 @@
   },
   "engines": [
     {
+      "id": "360",
+      "name": "360 搜索",
+      "docs": "360/",
+      "endpoints": [
+        {
+          "id": "360.images",
+          "purpose": "图片搜索（JSON，单次大结果集）",
+          "available": true,
+          "method": "GET",
+          "url": "https://image.so.com/j",
+          "params": {
+            "q": "必填",
+            "pn": "已加载条数（不是页码）",
+            "rn": "被忽略",
+            "src": "srp"
+          },
+          "returns": "JSON（Content-Type 为 application/javascript）",
+          "batch": "85-234（随 pn 增长）",
+          "paging": "pn += 已拿到的条数；list 是累积集合，pn=30 包含 pn=0 的全部",
+          "fields": {
+            "total": "整数，会浮动 ±30，不可用于算页数",
+            "end": "布尔，是否到底",
+            "list[].id": "32 位十六进制，去重键",
+            "list[]._thumb": "带尺寸前缀的缩略图（列表用）",
+            "list[].link": "原图（http，360 CDN）",
+            "list[].width/height": "字符串不是数字",
+            "list[].imgsize": "如 160KB",
+            "list[].imgtype": "JPEG/PNG",
+            "list[].grpmd5/downurl/fixedSize": "字符串化布尔 \"False\"，if(x) 恒真"
+          }
+        },
+        {
+          "id": "360.suggest",
+          "purpose": "输入联想",
+          "available": true,
+          "method": "GET",
+          "url": "https://sug.so.360.cn/suggest",
+          "params": {
+            "word": "必填"
+          },
+          "returns": "JSON",
+          "batch": 10,
+          "fields": {
+            "errorcode": "0 = 成功",
+            "result[].word": "建议词",
+            "result[].face": "样本恒空"
+          }
+        },
+        {
+          "id": "360.web",
+          "purpose": "网页搜索",
+          "available": false,
+          "reason": "302 → qcaptcha 验证码页（curl 与真实浏览器一致）",
+          "method": "GET",
+          "url": "https://www.so.com/s"
+        }
+      ]
+    },
+    {
+      "id": "baidu",
+      "name": "百度",
+      "docs": "baidu/",
+      "endpoints": [
+        {
+          "id": "baidu.suggest",
+          "purpose": "输入联想（JSON）",
+          "available": true,
+          "method": "GET",
+          "url": "https://www.baidu.com/sugrec",
+          "params": {
+            "prod": "必填，pc",
+            "wd": "必填",
+            "ie": "utf-8"
+          },
+          "returns": "JSON",
+          "batch": 10,
+          "fields": {
+            "g[].q": "建议词",
+            "g[].type": "恒 sug",
+            "g[].sa": "埋点 s_1..s_10"
+          }
+        },
+        {
+          "id": "baidu.suggest.jsonp",
+          "purpose": "输入联想（JSONP + GBK）",
+          "available": true,
+          "method": "GET",
+          "url": "https://suggestion.baidu.com/su",
+          "params": {
+            "wd": "必填",
+            "cb": "回调名"
+          },
+          "returns": "text/javascript; charset=gbk",
+          "batch": 10,
+          "caveats": [
+            "不是合法 JSON：键名无引号 + 函数包裹 + GBK 编码"
+          ]
+        },
+        {
+          "id": "baidu.images",
+          "purpose": "图片搜索",
+          "available": false,
+          "reason": "非浏览器返回 {\"antiFlag\":1,\"message\":\"Forbid spider access\"}；headless 浏览器响应体为空",
+          "method": "GET",
+          "url": "https://image.baidu.com/search/acjson",
+          "params": {
+            "tn": "resultjson_com",
+            "word": "必填",
+            "pn": "偏移",
+            "rn": "30",
+            "gsm": "= hex(pn)，30→1e、60→3c"
+          }
+        },
+        {
+          "id": "baidu.web",
+          "purpose": "网页搜索",
+          "available": false,
+          "reason": "curl 302 → wappass 图形验证码；真实浏览器 200 正常（同 IP）",
+          "method": "GET",
+          "url": "https://www.baidu.com/s"
+        }
+      ]
+    },
+    {
+      "id": "bilibili",
+      "name": "哔哩哔哩",
+      "docs": "bilibili/",
+      "endpoints": [
+        {
+          "id": "bilibili.search.video",
+          "purpose": "视频搜索",
+          "available": true,
+          "method": "GET",
+          "url": "https://api.bilibili.com/x/web-interface/search/type",
+          "params": {
+            "search_type": "必填，video",
+            "keyword": "必填",
+            "page": "页码，1 起，实测有效",
+            "page_size": "每页条数，50 实测有效",
+            "order": "pubdate | click，实测有效",
+            "duration": "1 = 10 分钟以下，实测有效"
+          },
+          "prereq": "先 GET https://www.bilibili.com/ 取 buvid3 cookie；否则 412",
+          "returns": "JSON",
+          "batch": 20,
+          "paging": "page += 1（最多 50 页；numResults 封顶 1000）",
+          "fields": {
+            "bvid": "BV 号，链接用 https://www.bilibili.com/video/{bvid}",
+            "aid": "旧 av 号（arcurl 里给的是 av 链接）",
+            "title": "可能含 <em class=\"keyword\"> 高亮，13/20 命中",
+            "duration": "「分钟:秒」且秒不补零（2398:14 / 189:9）",
+            "pubdate": "Unix 秒，0 表示无",
+            "pic": "// 开头的协议相对 URL，需补 https:",
+            "play": "播放量",
+            "video_review": "弹幕",
+            "favorites": "收藏",
+            "like": "点赞",
+            "type": "video / ketang 混合，必须过滤",
+            "tag": "逗号分隔字符串，不是数组"
+          },
+          "caveats": [
+            "ketang 类型无 bvid/duration、pubdate=0，必须先过滤 type==video"
+          ]
+        },
+        {
+          "id": "bilibili.suggest",
+          "purpose": "搜索联想",
+          "available": true,
+          "method": "GET",
+          "url": "https://s.search.bilibili.com/main/suggest",
+          "params": {
+            "term": "必填"
+          },
+          "returns": "JSON",
+          "batch": 10,
+          "fields": {
+            "result.tag[].value": "纯文本建议词（推荐）",
+            "result.tag[].name": "带 <em class=\"suggest_high_light\"> 高亮"
+          }
+        },
+        {
+          "id": "bilibili.hotword",
+          "purpose": "热搜榜",
+          "available": true,
+          "method": "GET",
+          "url": "https://s.search.bilibili.com/main/hotword",
+          "params": {},
+          "returns": "JSON",
+          "batch": 10,
+          "fields": {
+            "list[].keyword": "热词",
+            "list[].hot_id": "热词 ID",
+            "list[].icon": "图标 URL",
+            "total_count": "条数"
+          }
+        }
+      ]
+    },
+    {
       "id": "bing",
       "name": "Bing",
       "docs": "bing/",
@@ -58,11 +257,17 @@
           "available": true,
           "method": "GET",
           "url": "https://cn.bing.com/search",
-          "params": { "q": "必填", "format": "固定 rss" },
+          "params": {
+            "q": "必填",
+            "format": "固定 rss"
+          },
           "returns": "RSS 2.0 XML",
           "batch": 10,
           "paging": null,
-          "caveats": ["first 与 count 均被忽略", "响应内含版权限制声明，仅限个人非商业 RSS 聚合器呈现"]
+          "caveats": [
+            "first 与 count 均被忽略",
+            "响应内含版权限制声明，仅限个人非商业 RSS 聚合器呈现"
+          ]
         },
         {
           "id": "bing.search.html",
@@ -80,10 +285,17 @@
           "available": true,
           "method": "GET",
           "url": "https://cn.bing.com/OSJSON.aspx",
-          "params": { "query": "必填", "form": "OSDJAS" },
+          "params": {
+            "query": "必填",
+            "form": "OSDJAS"
+          },
           "returns": "JSON",
           "batch": 12,
-          "fields": { "[0]": "query", "[1]": "建议数组", "[4].google:suggestrelevance": "相关度，与 [1] 等长递减" }
+          "fields": {
+            "[0]": "query",
+            "[1]": "建议数组",
+            "[4].google:suggestrelevance": "相关度，与 [1] 等长递减"
+          }
         },
         {
           "id": "bing.suggest.html",
@@ -91,10 +303,19 @@
           "available": true,
           "method": "GET",
           "url": "https://cn.bing.com/AS/Suggestions",
-          "params": { "qry": "必填", "pt": "page.home", "mkt": "zh-CN", "cp": "len(qry)", "cvid": "16 位十六进制" },
+          "params": {
+            "qry": "必填",
+            "pt": "page.home",
+            "mkt": "zh-CN",
+            "cp": "len(qry)",
+            "cvid": "16 位十六进制"
+          },
           "returns": "HTML <ul>（Content-Type 误标为 application/json）",
           "batch": 12,
-          "caveats": ["缺 mkt/cp/cvid 返回 400", "高亮在 span.sa_tm_text 内的 <strong>"]
+          "caveats": [
+            "缺 mkt/cp/cvid 返回 400",
+            "高亮在 span.sa_tm_text 内的 <strong>"
+          ]
         },
         {
           "id": "bing.related",
@@ -102,72 +323,20 @@
           "available": true,
           "method": "GET",
           "url": "https://cn.bing.com/instantsearch/getquerylist",
-          "params": { "query": "必填" },
+          "params": {
+            "query": "必填"
+          },
           "prereq": "必须带 Referer；Accept 不能是 application/json（会 404）",
           "returns": "JSON",
           "batch": 4,
-          "fields": { "QueryList[].CandicateQuery": "候选查询（拼写就是 Candicate）", "QueryList[].Score": "0-1 相关度", "Extension.trueSize": "条数，字符串类型" },
-          "caveats": ["英文查询返回 {}（无 QueryList 键），必须判空"]
-        }
-      ]
-    },
-    {
-      "id": "bilibili",
-      "name": "哔哩哔哩",
-      "docs": "bilibili/",
-      "endpoints": [
-        {
-          "id": "bilibili.search.video",
-          "purpose": "视频搜索",
-          "available": true,
-          "method": "GET",
-          "url": "https://api.bilibili.com/x/web-interface/search/type",
-          "params": {
-            "search_type": "必填，video",
-            "keyword": "必填",
-            "page": "页码，1 起，实测有效",
-            "page_size": "每页条数，50 实测有效",
-            "order": "pubdate | click，实测有效",
-            "duration": "1 = 10 分钟以下，实测有效"
-          },
-          "prereq": "先 GET https://www.bilibili.com/ 取 buvid3 cookie；否则 412",
-          "returns": "JSON",
-          "batch": 20,
-          "paging": "page += 1（最多 50 页；numResults 封顶 1000）",
           "fields": {
-            "bvid": "BV 号，链接用 https://www.bilibili.com/video/{bvid}",
-            "aid": "旧 av 号（arcurl 里给的是 av 链接）",
-            "title": "可能含 <em class=\"keyword\"> 高亮，13/20 命中",
-            "duration": "「分钟:秒」且秒不补零（2398:14 / 189:9）",
-            "pubdate": "Unix 秒，0 表示无",
-            "pic": "// 开头的协议相对 URL，需补 https:",
-            "play": "播放量", "video_review": "弹幕", "favorites": "收藏", "like": "点赞",
-            "type": "video / ketang 混合，必须过滤",
-            "tag": "逗号分隔字符串，不是数组"
+            "QueryList[].CandicateQuery": "候选查询（拼写就是 Candicate）",
+            "QueryList[].Score": "0-1 相关度",
+            "Extension.trueSize": "条数，字符串类型"
           },
-          "caveats": ["ketang 类型无 bvid/duration、pubdate=0，必须先过滤 type==video"]
-        },
-        {
-          "id": "bilibili.suggest",
-          "purpose": "搜索联想",
-          "available": true,
-          "method": "GET",
-          "url": "https://s.search.bilibili.com/main/suggest",
-          "params": { "term": "必填" },
-          "returns": "JSON",
-          "batch": 10,
-          "fields": { "result.tag[].value": "纯文本建议词（推荐）", "result.tag[].name": "带 <em class=\"suggest_high_light\"> 高亮" }
-        },
-        {
-          "id": "bilibili.hotword",
-          "purpose": "热搜榜",
-          "available": true,
-          "method": "GET",
-          "url": "https://s.search.bilibili.com/main/hotword",
-          "params": {},
-          "returns": "JSON",
-          "batch": 10,
-          "fields": { "list[].keyword": "热词", "list[].hot_id": "热词 ID", "list[].icon": "图标 URL", "total_count": "条数" }
+          "caveats": [
+            "英文查询返回 {}（无 QueryList 键），必须判空"
+          ]
         }
       ]
     },
@@ -182,7 +351,10 @@
           "available": true,
           "method": "GET",
           "url": "https://www.douyin.com/aweme/v1/web/search/sug/",
-          "params": { "keyword": "必填", "aid": "必填，6383" },
+          "params": {
+            "keyword": "必填",
+            "aid": "必填，6383"
+          },
           "returns": "JSON",
           "batch": 10,
           "fields": {
@@ -190,7 +362,9 @@
             "sug_list[].pos": "[{begin,end}] 高亮区间，左闭右开",
             "status_code": "0 = 成功"
           },
-          "caveats": ["extra_info 是 40+ 项排序埋点，不要使用"]
+          "caveats": [
+            "extra_info 是 40+ 项排序埋点，不要使用"
+          ]
         },
         {
           "id": "douyin.hot",
@@ -198,7 +372,10 @@
           "available": true,
           "method": "GET",
           "url": "https://www.douyin.com/aweme/v1/web/hot/search/list/",
-          "params": { "aid": "必填，6383", "detail_list": "1" },
+          "params": {
+            "aid": "必填，6383",
+            "detail_list": "1"
+          },
           "returns": "JSON",
           "batch": 49,
           "fields": {
@@ -220,96 +397,195 @@
       ]
     },
     {
-      "id": "360",
-      "name": "360 搜索",
-      "docs": "360/",
+      "id": "metaso",
+      "name": "秘塔 AI 搜索",
+      "docs": "metaso/",
       "endpoints": [
         {
-          "id": "360.images",
-          "purpose": "图片搜索（JSON，单次大结果集）",
+          "id": "metaso.chat",
+          "purpose": "AI 搜索（SSE 流式，匿名）",
           "available": true,
-          "method": "GET",
-          "url": "https://image.so.com/j",
-          "params": { "q": "必填", "pn": "已加载条数（不是页码）", "rn": "被忽略", "src": "srp" },
-          "returns": "JSON（Content-Type 为 application/javascript）",
-          "batch": "85-234（随 pn 增长）",
-          "paging": "pn += 已拿到的条数；list 是累积集合，pn=30 包含 pn=0 的全部",
+          "method": "POST",
+          "url": "https://metaso.cn/api/search/chat",
+          "headers": {
+            "Content-Type": "application/json",
+            "accept": "text/event-stream",
+            "metaso-pc": "pc",
+            "Cookie": "tid=<任意 UUID>",
+            "Referer": "https://metaso.cn/"
+          },
+          "body": {
+            "model": "fast_thinking | fast | ds | pro",
+            "stream": true,
+            "messages": [
+              {
+                "id": "temp-<uuid>",
+                "key": "temp-<uuid>",
+                "conversationId": "temp-<uuid>",
+                "role": "user",
+                "content": "问题",
+                "markdownContent": "问题",
+                "engineType": "",
+                "filter": "all",
+                "contentType": 0,
+                "mode": "detail"
+              }
+            ],
+            "engineType": "\"\" | pdf | quanwang",
+            "mode": "detail",
+            "filter": "all",
+            "outputStyle": "正常",
+            "outputLanguage": "中文"
+          },
+          "returns": "text/event-stream",
+          "events": {
+            "conversation_init": "data.id = 会话 id（/chat/<id>）",
+            "user_message_init": "data.id = 用户消息 id",
+            "response_message_init": "data.id = 回答消息 id",
+            "heartbeat": "保活",
+            "chat.completion.qa_with_agent": "choices[0].delta{action,reasoning_content,content,took}；顶层 id = resultId",
+            "error": "如 {\"msg\":\"Too Many Requests\",\"code\":429}",
+            "[DONE]": "结束"
+          },
+          "caveats": [
+            "tid 可为本地随机 UUID，实测任意 UUID 有效；不带 tid 返回 429",
+            "匿名 IP 级限流：连续 6–8 次触发 429，HTTP 仍为 200，必须看流内 code",
+            "token 字段（152 字符密文）可省略"
+          ]
+        },
+        {
+          "id": "metaso.result",
+          "purpose": "取引用条目",
+          "available": true,
+          "method": "POST",
+          "url": "https://metaso.cn/api/search-result",
+          "headers": {
+            "Content-Type": "application/json",
+            "Cookie": "tid=<UUID>"
+          },
+          "body": {
+            "resultId": "<上一步流的顶层 id>"
+          },
+          "returns": "application/json，data.citations[] 30 字段",
           "fields": {
-            "total": "整数，会浮动 ±30，不可用于算页数",
-            "end": "布尔，是否到底",
-            "list[].id": "32 位十六进制，去重键",
-            "list[]._thumb": "带尺寸前缀的缩略图（列表用）",
-            "list[].link": "原图（http，360 CDN）",
-            "list[].width/height": "字符串不是数字",
-            "list[].imgsize": "如 160KB",
-            "list[].imgtype": "JPEG/PNG",
-            "list[].grpmd5/downurl/fixedSize": "字符串化布尔 \"False\"，if(x) 恒真"
-          }
+            "title": "标题",
+            "link": "落地页",
+            "snippet": "命中片段",
+            "date/publish_date_str": "日期",
+            "author/institution": "作者/机构",
+            "site": "域名拆分数组",
+            "authority": "权威度",
+            "article_type": "文章类型",
+            "language": "ZH/EN",
+            "chunk_id": "切片序号",
+            "rank_policy_score": "排序分 0–1",
+            "display.refer_id": "正文角标编号",
+            "agent_qa_meta": "子查询"
+          },
+          "caveats": [
+            "不受搜索限流影响"
+          ]
         },
         {
-          "id": "360.suggest",
-          "purpose": "输入联想",
+          "id": "metaso.knowledge",
+          "purpose": "网页全文",
           "available": true,
           "method": "GET",
-          "url": "https://sug.so.360.cn/suggest",
-          "params": { "word": "必填" },
-          "returns": "JSON",
-          "batch": 10,
-          "fields": { "errorcode": "0 = 成功", "result[].word": "建议词", "result[].face": "样本恒空" }
+          "url": "https://metaso.cn/api/knowledge/detail/{id}",
+          "returns": "application/json，data{id,name,description,byUser}",
+          "caveats": [
+            "id 取 citations 的 id 或 file_uuid"
+          ]
         },
         {
-          "id": "360.web",
-          "purpose": "网页搜索",
-          "available": false,
-          "reason": "302 → qcaptcha 验证码页（curl 与真实浏览器一致）",
+          "id": "metaso.urlsearch",
+          "purpose": "URL 直接搜索",
+          "available": true,
           "method": "GET",
-          "url": "https://www.so.com/s"
+          "url": "https://metaso.cn/",
+          "params": {
+            "q": "问题（URL 编码）"
+          },
+          "returns": "302 到 /chat/<id>，HTML",
+          "caveats": [
+            "适合快速验证接口是否存活"
+          ]
+        },
+        {
+          "id": "metaso.official",
+          "purpose": "官方开放 API",
+          "available": false,
+          "method": "POST",
+          "url": "https://metaso.cn/api/v1/search",
+          "content_type": "application/json",
+          "reason": "需要 API Key：无 Key 返回 {\"errCode\":2005,\"errMsg\":\"API密钥无效\"}；GET 返回 405",
+          "caveats": [
+            "与上面的网页端匿名接口是两套东西"
+          ]
         }
       ]
     },
     {
-      "id": "baidu",
-      "name": "百度",
-      "docs": "baidu/",
+      "id": "shenma",
+      "name": "神马",
+      "docs": "shenma/",
       "endpoints": [
         {
-          "id": "baidu.suggest",
-          "purpose": "输入联想（JSON）",
+          "id": "shenma.lite",
+          "purpose": "网页搜索（极速版）",
           "available": true,
           "method": "GET",
-          "url": "https://www.baidu.com/sugrec",
-          "params": { "prod": "必填，pc", "wd": "必填", "ie": "utf-8" },
-          "returns": "JSON",
-          "batch": 10,
-          "fields": { "g[].q": "建议词", "g[].type": "恒 sug", "g[].sa": "埋点 s_1..s_10" }
+          "url": "https://m.sm.cn/s/lite",
+          "params": {
+            "q": "关键词（必需）",
+            "page": "页码 1–5（唯一有效分页参数）"
+          },
+          "batch": "每页约 10–14 条，5 页封顶；#results 的 data-total 为匹配总数",
+          "paging": "page=1..5；pn / start / p / from+size 全部无效",
+          "returns": "text/html（SSR，Quark UI qk-* 组件）",
+          "fields": {
+            "title": ".qk-title-text.qk-font-bold（含 <em> 高亮）",
+            "url": "同节点 <a.qk-link-wrapper href>",
+            "snippet": ".qk-paragraph-text",
+            "source_type": ".qk-tag",
+            "site": ".qk-source-item",
+            "total": "#results[data-total]"
+          },
+          "caveats": [
+            "广告卡 class=cpc-card，链接为 m.sm.cn/adclick?disguise_click_url=…，必须过滤",
+            "page≥6 返回 320KB 空壳（App 下载引导），非 404",
+            "普通 GET /s?q= 被 WAF 拒（cloud_ip_bl 云 IP 黑名单），换 UA/内核均无效"
+          ]
         },
         {
-          "id": "baidu.suggest.jsonp",
-          "purpose": "输入联想（JSONP + GBK）",
+          "id": "shenma.hot",
+          "purpose": "热搜榜",
           "available": true,
           "method": "GET",
-          "url": "https://suggestion.baidu.com/su",
-          "params": { "wd": "必填", "cb": "回调名" },
-          "returns": "text/javascript; charset=gbk",
-          "batch": 10,
-          "caveats": ["不是合法 JSON：键名无引号 + 函数包裹 + GBK 编码"]
-        },
-        {
-          "id": "baidu.images",
-          "purpose": "图片搜索",
-          "available": false,
-          "reason": "非浏览器返回 {\"antiFlag\":1,\"message\":\"Forbid spider access\"}；headless 浏览器响应体为空",
-          "method": "GET",
-          "url": "https://image.baidu.com/search/acjson",
-          "params": { "tn": "resultjson_com", "word": "必填", "pn": "偏移", "rn": "30", "gsm": "= hex(pn)，30→1e、60→3c" }
-        },
-        {
-          "id": "baidu.web",
-          "purpose": "网页搜索",
-          "available": false,
-          "reason": "curl 302 → wappass 图形验证码；真实浏览器 200 正常（同 IP）",
-          "method": "GET",
-          "url": "https://www.baidu.com/s"
+          "url": "https://api.m.sm.cn/rest",
+          "params": {
+            "method": "sc.news_top_list（必需）",
+            "format": "json（必需）",
+            "start": "起始序号，默认 0",
+            "hit": "条数，默认 10"
+          },
+          "batch": "23 KB JSON",
+          "returns": "application/json（顶层是 {\"0\":{…},\"1\":{…}} 的 dict，不是数组）",
+          "fields": {
+            "index": "排名，从 1 开始",
+            "query": "检索词",
+            "title": "展示标题",
+            "news_title": "关联新闻标题",
+            "news_image": "配图 CDN 直链",
+            "weight": "热度权重（字符串化浮点）",
+            "id": "条目 id",
+            "event_type": "分类",
+            "hot_trend": "涨幅标记"
+          },
+          "caveats": [
+            "键名是数字字符串，需 list(d.values())",
+            "其余 method：tools.nav（导航配置）、policy.index（声明元信息）"
+          ]
         }
       ]
     },
@@ -333,7 +609,12 @@
           "reason": "200 + {\"status\":1,\"info\":\"forbid\",\"data\":null}",
           "method": "GET",
           "url": "https://pic.sogou.com/napi/pc/searchList",
-          "params": { "query": "必填", "mode": "1", "start": "偏移", "xml_len": "48" }
+          "params": {
+            "query": "必填",
+            "mode": "1",
+            "start": "偏移",
+            "xml_len": "48"
+          }
         },
         {
           "id": "sogou.suggest",
@@ -342,47 +623,10 @@
           "reason": "200 + 0 字节（Content-Length: 0）",
           "method": "GET",
           "url": "https://www.sogou.com/suggnew/ajajjson",
-          "params": { "key": "必填", "type": "web" }
-        }
-      ]
-    },
-    {
-      "id": "shenma",
-      "name": "神马",
-      "docs": "shenma/",
-      "endpoints": [
-        {
-          "id": "shenma.web",
-          "purpose": "网页搜索",
-          "available": false,
-          "reason": "HTTP 200 但返回阿里 bixi punish 壳（action=deny，1073 字节），换 UA 无效",
-          "method": "GET",
-          "url": "https://m.sm.cn/s"
-        },
-        {
-          "id": "shenma.suggest",
-          "purpose": "输入联想",
-          "available": false,
-          "reason": "sugs.m.sm.cn/web 返回 punish 注入脚本；/su 为 404",
-          "method": "GET",
-          "url": "https://sugs.m.sm.cn/web"
-        }
-      ]
-    },
-    {
-      "id": "metaso",
-      "name": "秘塔 AI 搜索",
-      "docs": "metaso/",
-      "endpoints": [
-        {
-          "id": "metaso.search",
-          "purpose": "AI 搜索",
-          "available": false,
-          "reason": "需要 API Key：POST 返回 200 + {\"errCode\":2005,\"errMsg\":\"API密钥无效\"}；GET 返回 405",
-          "method": "POST",
-          "url": "https://metaso.cn/api/v1/search",
-          "content_type": "application/json",
-          "caveats": ["网页端桌面要求扫码登录，匿名会话不发搜索请求", "无 Key 时无法从错误响应反推 body schema"]
+          "params": {
+            "key": "必填",
+            "type": "web"
+          }
         }
       ]
     }
@@ -390,19 +634,35 @@
   "recipes": [
     {
       "goal": "按关键词取 100 张图片（含来源页与原图）",
-      "steps": ["bing.images.async: first=1,36,71（每次 35 条）", "按 md5 去重", "取 turl 做缩略图、purl 做来源"]
+      "steps": [
+        "bing.images.async: first=1,36,71（每次 35 条）",
+        "按 md5 去重",
+        "取 turl 做缩略图、purl 做来源"
+      ]
     },
     {
       "goal": "按关键词取视频列表（含播放量/时长）",
-      "steps": ["先取 buvid3", "bilibili.search.video: page_size=50, page=1..N", "过滤 type=='video'", "标题去 <em>，pic 补 https:"]
+      "steps": [
+        "先取 buvid3",
+        "bilibili.search.video: page_size=50, page=1..N",
+        "过滤 type=='video'",
+        "标题去 <em>，pic 补 https:"
+      ]
     },
     {
       "goal": "拿当日各平台热榜",
-      "steps": ["douyin.hot（49 条，带热度值）", "bilibili.hotword（10 条）"]
+      "steps": [
+        "douyin.hot（49 条，带热度值）",
+        "bilibili.hotword（10 条）"
+      ]
     },
     {
       "goal": "输入框联想",
-      "steps": ["中文通用：baidu.suggest 或 360.suggest", "视频场景：bilibili.suggest（带高亮区间）", "短视频场景：douyin.suggest（带 pos 区间）"]
+      "steps": [
+        "中文通用：baidu.suggest 或 360.suggest",
+        "视频场景：bilibili.suggest（带高亮区间）",
+        "短视频场景：douyin.suggest（带 pos 区间）"
+      ]
     }
   ]
 }
