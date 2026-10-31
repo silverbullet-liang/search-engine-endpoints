@@ -67,6 +67,19 @@
 
 ---
 
+## 技能包（可直接安装）
+
+[skill/aggregate-search/](skill/aggregate-search/) 是把这八家端点封装好的聚合搜索技能：一次调用并发请求多个引擎，输出统一 JSON。
+
+```bash
+python3 scripts/search.py "量子计算"                    # 网页
+python3 scripts/search.py "猫" --kind image --limit 40   # 图片
+python3 scripts/search.py "量子计算" --kind bundle       # web+image+video+hot
+python3 scripts/search.py "什么是向量数据库" --kind ai --citations
+```
+
+统一字段、跨引擎去重、RRF 融合打分、单引擎失败不影响整体。详见 [SKILL.md](skill/aggregate-search/SKILL.md)。
+
 ## 给 AI 用
 
 两个机器可读产物，专门给模型与 Agent 消费：
@@ -157,6 +170,7 @@ python3 test/test_parse.py
 ├── douyin/         抖音：README（联想 / 热搜可用，内容搜索需登录）
 ├── shenma/         神马：README（极速版搜索 + 热搜 JSON 网关）
 ├── metaso/         秘塔 AI：README（匿名 SSE 搜索 + 引用条目 + 全文）
+├── skill/          聚合搜索技能包（aggregate-search）
 ├── api.json        机器可读端点清单（8 引擎 / 29 端点，20 个可用）
 ├── llms.txt        LLM 索引
 ├── examples/       parse_images.py（零依赖解析器）
