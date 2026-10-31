@@ -253,7 +253,8 @@ const NAV = [
     { id: "overview", label: "总览" },
     { id: "matrix",   label: "可用性矩阵" },
     { id: "rejects",  label: "拒绝形态" },
-    { id: "compliance", label: "合规边界" } ] },
+    { id: "compliance", label: "合规边界" },
+    { id: "ai-usage", label: "给 AI 用" } ] },
   { group: "Bing", items: [
     { id: "bing-web",     label: "Web 搜索",  status: "warn" },
     { id: "bing-image",   label: "图片搜索",  status: "ok" },
@@ -270,7 +271,19 @@ const NAV = [
   { group: "搜狗", items: [
     { id: "sogou-web",     label: "Web 搜索", status: "err" },
     { id: "sogou-image",   label: "图片搜索", status: "err" },
-    { id: "sogou-suggest", label: "输入联想", status: "err" } ] }
+    { id: "sogou-suggest", label: "输入联想", status: "err" } ] },
+  { group: "哔哩哔哩", items: [
+    { id: "bili-search",  label: "视频搜索", status: "ok" },
+    { id: "bili-suggest", label: "输入联想", status: "ok" },
+    { id: "bili-hot",     label: "热搜榜",   status: "ok" } ] },
+  { group: "抖音", items: [
+    { id: "douyin-suggest", label: "输入联想", status: "ok" },
+    { id: "douyin-hot",     label: "热搜榜",   status: "ok" },
+    { id: "douyin-search",  label: "内容搜索", status: "err" } ] },
+  { group: "神马", items: [
+    { id: "shenma-web", label: "Web 搜索", status: "err" } ] },
+  { group: "秘塔 AI", items: [
+    { id: "metaso-api", label: "API 接口", status: "err" } ] }
 ];
 
 const DOCS = {
@@ -1186,6 +1199,427 @@ Content-Length: 0`,
     "判断依据与 <code>/web</code>、<code>/napi</code> 一致（IP + 客户端环境）。"
   ],
   compliance: `该端点位于 <code>www.sogou.com</code>，其 <code>robots.txt</code> 对通配代理为 <code>Disallow: /</code>。`
+}
+,
+/* ============ 给 AI 用 ============ */
+"ai-usage": {
+  group: "概览", label: "给 AI 用",
+  title: "怎么把这套东西喂给模型",
+  sub: "三个交付物分别面向三种消费方式：人读、程序读、模型读。",
+  meta: [{ l: "ok", t: "14 个可用端点" }, { l: "info", t: "25 个端点已登记" }],
+  custom: `
+  <h2><span class="num">01</span> 三个交付物</h2>
+  <div class="tw"><table>
+    <tr><th>文件</th><th>给谁</th><th>怎么用</th></tr>
+    <tr><td><a href="https://silverbullet-liang.github.io/search-engine-endpoints/api.json" target="_blank" rel="noopener">api.json</a></td><td>程序 / Agent</td><td>8 引擎、25 端点的结构化清单：<code>available</code>、参数、字段类型、翻页方式、坑。<strong>可直接当 tool 目录读</strong></td></tr>
+    <tr><td><a href="https://silverbullet-liang.github.io/search-engine-endpoints/llms.txt" target="_blank" rel="noopener">llms.txt</a></td><td>LLM 抓取入口</td><td>纯文本索引，50 行内说清「哪些能用、哪些不行、字段哪里会错」</td></tr>
+    <tr><td>本页面</td><td>人</td><td>逐端点看参数、请求示例、返回示例</td></tr>
+  </table></div>
+
+  <h2><span class="num">02</span> 给模型的最小上下文</h2>
+  <p>把下面这段塞进 system prompt：</p>
+  <div class="code"><div class="code-bar"><span class="tag">prompt</span><span class="spacer"></span><button class="copy" data-copy>复制</button></div><pre>你可用的搜索接口（全部匿名，无需 key）：
+1. 图片分页  GET https://cn.bing.com/images/async?q={kw}&amp;first={1,36,71…}
+   返回 HTML 片段，取 a.iusc 的 m 属性（先 html.unescape 再 json 解析）
+   字段：murl 原图 / turl 缩略图 / purl 来源页 / t 标题 / md5 去重键
+   注意：每批 &lt;=35 条；越界仍返回尾部残余；无 img 标签
+2. 图片大结果集  GET https://image.so.com/j?q={kw}&amp;pn={已加载条数}
+   返回 JSON，取 list[]（累积集合，含前面所有批次），去重用 id
+3. 视频搜索  GET https://api.bilibili.com/x/web-interface/search/type?search_type=video&amp;keyword={kw}&amp;page={n}
+   需先 GET https://www.bilibili.com/ 取 buvid3；过滤 type=="video"；标题去 em 标签
+4. 热榜  GET https://www.douyin.com/aweme/v1/web/hot/search/list/?aid=6383&amp;detail_list=1
+   取 data.word_list[]：word / position / hot_value
+5. 联想  GET https://sug.so.360.cn/suggest?word={kw} → result[].word
+
+不可用（不要重试）：抖音内容搜索（需登录 2483）、百度网页（验证码）、
+360 网页（验证码）、搜狗全部（forbid）、神马（punish 壳）、秘塔（需 key）。
+
+调用原则：一次请求只取一批；需要更多结果时优先换关键词或换引擎。</pre></div>
+
+  <h2><span class="num">03</span> 字段陷阱清单</h2>
+  <div class="tw"><table>
+    <tr><th>字段</th><th>真相</th></tr>
+    <tr><td>B站 <code>duration</code></td><td>「分钟:秒」且秒不补零（<code>2398:14</code>、<code>189:9</code>），不是 HH:MM:SS</td></tr>
+    <tr><td>B站 <code>title</code></td><td>可能含 <code>&lt;em class="keyword"&gt;</code> 高亮，13/20 条命中</td></tr>
+    <tr><td>B站 <code>result</code></td><td>混有 <code>type:"ketang"</code>，其 <code>bvid</code> 为空、<code>pubdate</code> 为 0</td></tr>
+    <tr><td>B站 <code>numResults</code></td><td>封顶 1000，不是真实总数</td></tr>
+    <tr><td>360 <code>list</code></td><td>累积集合，不是单页；<code>pn=30</code> 含 <code>pn=0</code> 全部</td></tr>
+    <tr><td>360 <code>"False"</code></td><td>字符串化布尔，<code>if (x)</code> 恒真</td></tr>
+    <tr><td>抖音 <code>word_list</code></td><td>实测 49 条（不是 50），<code>position</code> 从 1 开始</td></tr>
+    <tr><td>Bing <code>desc</code></td><td>高亮用 <code>U+E000</code>/<code>U+E001</code> 包裹，直接渲染是豆腐块</td></tr>
+    <tr><td>百度 <code>gsm</code></td><td>等于 <code>pn</code> 的十六进制（30→<code>1e</code>）</td></tr>
+  </table></div>
+
+  <h2><span class="num">04</span> 四个现成组合</h2>
+  <div class="grid">
+    <div class="card"><div class="n">取图</div><div class="t">100 张图 + 来源</div><div class="d">Bing 三次 <code>first=1/36/71</code> 按 md5 去重；或 360 单次拿 85+ 条。</div></div>
+    <div class="card"><div class="n">取视频</div><div class="t">带播放量的列表</div><div class="d">B站 <code>page_size=50</code> + <code>order=click</code>，过滤 ketang。</div></div>
+    <div class="card"><div class="n">取热点</div><div class="t">当日榜单</div><div class="d">抖音热搜 49 条（带热度）+ B站热榜 10 条。</div></div>
+    <div class="card"><div class="n">做联想</div><div class="t">输入框补全</div><div class="d">中文用 360/百度，视频用 B站，短视频用抖音。</div></div>
+  </div>`
+}
+,
+/* ============ 神马 ============ */
+"shenma-web": {
+  group: "神马", label: "Web 搜索",
+  title: "Web 搜索 · 没有匿名入口",
+  sub: "实测结论：全部路径返回阿里 bixi 风控壳（HTTP 200 + action=deny），换 UA 无效。记下来是为了让你不用重复试。",
+  status: { l: "err", t: "punish 壳" },
+  method: "GET", url: "https://m.sm.cn/s",
+  src: "shenma/README.md",
+  params: [["q", "是", "查询词"], ["type", "否", "<code>image</code> 等，实测同样被拦"]],
+  headers: `User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1
+# 桌面 UA 与移动 UA 返回完全一致（1073 字节）`,
+  curl: `curl -sS 'https://m.sm.cn/s?q=test' \\
+  -A 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1'`,
+  responseTag: "html（1073 字节）",
+  response: `<a id="a-link"
+    href="https://bixi.alicdn.com/punish/punish:resource:template:baba:fcvsxmqtca_35282882.html
+          ?qrcode=5Vcj8o_wkBETi4Pl4giQow|auWQSA|WXqniw_0|cloud_ip_bl|0
+          &uuid=e55723f28ff09011138b83e5e20890a3
+          &action=deny&origin=https%3A%2F%2Fm.sm.cn%3A443%2Fs"></a>
+
+&lt;script&gt;
+var cookie = "x5secdata=;maxAge=-100;expires=…;path=/;domain=.sm.cn;";
+document.cookie = cookie;
+document.getElementById("a-link").click();
+window._config_ = { "action": "deny", … };
+&lt;/script&gt;
+<!--rgv587_flag:sm-->`,
+  extra: `<h2><span class="num">04</span> 试过的路径</h2>
+  <div class="tw"><table>
+    <tr><th>路径</th><th>结果</th></tr>
+    <tr><td><code>GET /s?q=test</code></td><td>200，1073 B，punish 壳</td></tr>
+    <tr><td><code>GET /s?q=猫&amp;type=image</code></td><td>200，1073 B，同一份壳</td></tr>
+    <tr><td><code>GET so.m.sm.cn/s?q=test</code></td><td>200，1079 B，同一份壳</td></tr>
+    <tr><td><code>GET /su?wd=test</code></td><td>404（16 B）</td></tr>
+    <tr><td><code>GET sugs.m.sm.cn/web?q=test</code></td><td>200，3856 B，punish 注入脚本</td></tr>
+  </table></div>
+  <p><code>bixi.alicdn.com</code> 是阿里统一防爬（淘宝/UC/夸克同源），<code>cloud_ip_bl</code> 说明用到出口 IP 判定 —— 这也是换 UA 无效的原因。</p>
+
+  <h2><span class="num">05</span> 用这些替代</h2>
+  <div class="tw"><table>
+    <tr><th>需求</th><th>改用</th></tr>
+    <tr><td>图片（可分页）</td><td><a href="#/bing-image">Bing /images/async</a></td></tr>
+    <tr><td>图片（单次大结果集）</td><td><a href="#/360-image">360 image.so.com/j</a></td></tr>
+    <tr><td>联想</td><td><a href="#/baidu-suggest">百度 sugrec</a> / <a href="#/360-suggest">360 suggest</a></td></tr>
+    <tr><td>视频 / 热点</td><td><a href="#/bili-search">B站</a> / <a href="#/douyin-hot">抖音热搜</a></td></tr>
+  </table></div>`,
+  notes: [
+    "HTTP 200 但内容是跳转壳，只看状态码的客户端会误判成功。",
+    "壳里的脚本会清掉 <code>x5secdata</code> cookie 再跳惩罚页，未通过的会话会被反复送回。",
+    "没有取得任何结果数据，因此本页没有字段表。"
+  ],
+  compliance: `<code>m.sm.cn/robots.txt</code>：<code>Allow: /</code> 但 <code>Disallow: /*?*</code>（禁止所有带查询参数的 URL）。`
+}
+,
+/* ============ B站 · 视频搜索 ============ */
+"bili-search": {
+  group: "哔哩哔哩", label: "视频搜索",
+  title: "视频搜索 · 匿名可用",
+  sub: "先访问一次首页拿 buvid3，之后可稳定分页。返回 26 个字段，含播放量、时长、UP 主、封面。",
+  status: { l: "ok", t: "可用" },
+  method: "GET", url: "https://api.bilibili.com/x/web-interface/search/type",
+  src: "bilibili/README.md",
+  params: [
+    ["search_type", "是", "<code>video</code>"],
+    ["keyword", "是", "关键词，URL 编码"],
+    ["page", "否", "页码，1 起。实测 <code>page=2</code> 生效"],
+    ["page_size", "否", "每页条数。<code>50</code> 实测生效（返回 50 条）"],
+    ["order", "否", "<code>pubdate</code>（最新）/ <code>click</code>（播放），实测生效"],
+    ["duration", "否", "<code>1</code> = 10 分钟以下，实测生效"]
+  ],
+  headers: `User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36
+Referer: https://search.bilibili.com/
+Cookie: （含 buvid3，来自第一步）`,
+  curl: `# 1) 取 cookie —— 直接请求会 412
+curl -sS -c bili.jar -o /dev/null https://www.bilibili.com/
+
+# 2) 搜索
+curl -sS -b bili.jar \\
+  -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36' \\
+  -e 'https://search.bilibili.com/' \\
+  'https://api.bilibili.com/x/web-interface/search/type?search_type=video&keyword=%E7%BC%96%E7%A8%8B&page=1'`,
+  responseTag: "json",
+  response: `{
+  "code": 0, "message": "OK",
+  "data": {
+    "page": 1, "pagesize": 20,
+    "numResults": 1000, "numPages": 50,
+    "result": [
+      { "type": "video",
+        "bvid": "BV1rpWjevEip", "aid": 113006243481679,
+        "title": "【全748集】目前B站最全最细的Python零基础全套教程…",
+        "author": "Python官方课程", "mid": 3546597933714079,
+        "play": 21360579, "video_review": 135042,
+        "favorites": 905768, "like": 588966,
+        "duration": "2398:14", "pubdate": 1724338758,
+        "pic": "//i2.hdslb.com/bfs/archive/a979056b…jpg",
+        "arcurl": "http://www.bilibili.com/video/av113006243481679",
+        "tag": "程序员,Python教程,Python入门零基础",
+        "typename": "计算机技术", "is_union_video": 0, "badgepay": false }
+    ],
+    "next": 2
+  }
+}`,
+  extra: `<h2><span class="num">04</span> 参数实测</h2>
+  <div class="tw"><table>
+    <tr><th>请求</th><th>结果</th></tr>
+    <tr><td>默认（无 cookie）</td><td><strong>412</strong></td></tr>
+    <tr><td>page=2</td><td>200，<code>page: 2</code>，首批不同</td></tr>
+    <tr><td>page_size=50</td><td>200，<code>pagesize: 50</code>，返回 50 条</td></tr>
+    <tr><td>order=pubdate</td><td>200，首条变为最新视频</td></tr>
+    <tr><td>order=click</td><td>200，首条为播放最高</td></tr>
+    <tr><td>duration=1</td><td>200，结果全为 10 分钟内</td></tr>
+  </table></div>
+
+  <h2><span class="num">05</span> 字段</h2>
+  <div class="tw"><table>
+    <tr><th>字段</th><th>类型</th><th>说明</th></tr>
+    <tr><td><code>bvid</code></td><td>string</td><td>BV 号，链接用 <code>https://www.bilibili.com/video/{bvid}</code></td></tr>
+    <tr><td><code>title</code></td><td>string</td><td>可能含 <code>&lt;em class="keyword"&gt;</code> 高亮（13/20 条）</td></tr>
+    <tr><td><code>duration</code></td><td>string</td><td>「分钟:秒」，秒不补零：<code>2398:14</code> / <code>189:9</code></td></tr>
+    <tr><td><code>pubdate</code></td><td>number</td><td>Unix 秒，<code>0</code> 表示无</td></tr>
+    <tr><td><code>pic</code></td><td>string</td><td><code>//</code> 开头协议相对（17/20），需补 <code>https:</code></td></tr>
+    <tr><td><code>play</code> / <code>like</code> / <code>favorites</code></td><td>number</td><td>播放 / 点赞 / 收藏</td></tr>
+    <tr><td><code>tag</code></td><td>string</td><td>逗号分隔串，不是数组</td></tr>
+    <tr><td><code>numResults</code></td><td>number</td><td>封顶 1000，不是真实总数</td></tr>
+  </table></div>`,
+  notes: [
+    "<strong>必须先过滤 <code>type == video</code></strong>：结果混有 <code>type: ketang</code>（付费课堂），其 <code>bvid</code> 为空、<code>duration</code> 为空、<code>pubdate</code> 为 0。",
+    "标题高亮直接渲染会显示标签，入库前用正则清掉 <code>&lt;/?em[^&gt;]*&gt;</code>。",
+    "时长不是标准时间：<code>2398:14</code> 是 2398 分 14 秒（合集 748 集），别算成 23:98。",
+    "<code>arcurl</code> 给的是 av 链接（<code>http://</code>），用 <code>bvid</code> 自己拼更稳。"
+  ],
+  compliance: `匿名可调；<code>api.bilibili.com</code> 的 <code>robots.txt</code> 对 <code>*</code> 为 <code>Disallow: /</code>。`
+}
+,
+/* ============ B站 · 联想 ============ */
+"bili-suggest": {
+  group: "哔哩哔哩", label: "输入联想",
+  title: "输入联想 · 带高亮区间",
+  sub: "无需 cookie、无需 Referer。10 条建议，value 是纯文本、name 带 em 高亮。",
+  status: { l: "ok", t: "可用" },
+  method: "GET", url: "https://s.search.bilibili.com/main/suggest",
+  src: "bilibili/README.md",
+  params: [["term", "是", "已输入文本"]],
+  headers: `User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36`,
+  curl: `curl -sS 'https://s.search.bilibili.com/main/suggest?term=%E7%BC%96%E7%A8%8B' \\
+  -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36'`,
+  responseTag: "json",
+  response: `{
+  "code": 0,
+  "result": { "tag": [
+      { "value": "零基础编程入门教程", "term": "零基础编程入门教程", "ref": 0,
+        "name": "零基础<em class=\\"suggest_high_light\\">编程</em>入门教程",
+        "spid": 5, "type": "", "item_feature": "" } ] },
+  "total_count": 0, "stoken": ""
+}`,
+  extra: `<h2><span class="num">04</span> 两个字段怎么选</h2>
+  <div class="tw"><table>
+    <tr><th>字段</th><th>内容</th><th>用途</th></tr>
+    <tr><td><code>value</code> / <code>term</code></td><td>纯文本</td><td>直接填输入框、直接请求搜索</td></tr>
+    <tr><td><code>name</code></td><td>含 <code>&lt;em class="suggest_high_light"&gt;</code></td><td>下拉框高亮显示匹配片段</td></tr>
+    <tr><td><code>spid</code></td><td>数字</td><td>来源编号，语义未公开</td></tr>
+  </table></div>`,
+  notes: ["<code>value</code> 已去高亮，取词用这个最省事。", "10 条固定，无分页、无 count 参数。"],
+  compliance: `匿名可调；<code>search.bilibili.com</code> 的 <code>robots.txt</code> 对 <code>*</code> 为 <code>Disallow: /</code>。`
+}
+,
+/* ============ B站 · 热搜 ============ */
+"bili-hot": {
+  group: "哔哩哔哩", label: "热搜榜",
+  title: "热搜榜",
+  sub: "一次 GET 拿 10 条热词，无参数、无 cookie。",
+  status: { l: "ok", t: "可用" },
+  method: "GET", url: "https://s.search.bilibili.com/main/hotword",
+  src: "bilibili/README.md",
+  params: [["（无）", "—", "不需要任何参数"]],
+  headers: `User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36`,
+  curl: `curl -sS 'https://s.search.bilibili.com/main/hotword' \\
+  -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36'`,
+  responseTag: "json",
+  response: `{
+  "code": 0,
+  "list": [
+    { "hot_id": 279882, "keyword": "BLG对战HLE生死局前瞻",
+      "show_name": "BLG对战HLE生死局前瞻", "score": 0.0,
+      "word_type": 4, "goto_type": 0,
+      "icon": "http://i0.hdslb.com/bfs/activity-plat/…png",
+      "live_id": [], "call_reason": 1, "heat_layer": 2 }
+  ],
+  "top_list": [], "total_count": 10, "seid": "…", "timestamp": 1793469000
+}`,
+  extra: `<h2><span class="num">04</span> 字段</h2>
+  <div class="tw"><table>
+    <tr><th>字段</th><th>说明</th></tr>
+    <tr><td><code>keyword</code> / <code>show_name</code></td><td>热搜词，本样本两者相同</td></tr>
+    <tr><td><code>hot_id</code></td><td>热词 ID，可用于跳转</td></tr>
+    <tr><td><code>word_type</code> / <code>goto_type</code></td><td>类型编码（4 = 话题类），语义未公开</td></tr>
+    <tr><td><code>icon</code></td><td>图标 URL，可能为空</td></tr>
+    <tr><td><code>total_count</code></td><td>条数</td></tr>
+  </table></div>`,
+  notes: ["固定 10 条，无分页。", "排序即榜单顺序，顺序遍历即可。"],
+  compliance: `匿名可调。`
+}
+,
+/* ============ 抖音 · 联想 ============ */
+"douyin-suggest": {
+  group: "抖音", label: "输入联想",
+  title: "输入联想 · 无需签名",
+  sub: "不需要 a_bogus、不需要登录，直接 200 返回 10 条。pos 字段给出高亮区间，比自己猜前缀可靠。",
+  status: { l: "ok", t: "可用" },
+  method: "GET", url: "https://www.douyin.com/aweme/v1/web/search/sug/",
+  src: "douyin/README.md",
+  params: [["keyword", "是", "已输入文本"], ["aid", "是", "应用 ID，网页端固定 <code>6383</code>"]],
+  headers: `User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36
+Referer: https://www.douyin.com/
+Accept: */*`,
+  curl: `curl -sS 'https://www.douyin.com/aweme/v1/web/search/sug/?keyword=test&aid=6383' \\
+  -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36' \\
+  -e 'https://www.douyin.com/'`,
+  responseTag: "json",
+  response: `{
+  "status_code": 0, "status_msg": "",
+  "sug_list": [
+    { "pos": [{ "begin": 0, "end": 3 }],
+      "content": "testflight兑换码",
+      "sug_type": "",
+      "word_record": { "group_id": "6567089457927820552",
+                       "words_position": 1,
+                       "words_content": "testflight",
+                       "words_source": "sug" },
+      "extra_info": { "ctr_score": "0.009927", "ecpm_score": 2.03 } }
+  ],
+  "rid": "…", "time_cost": 0.03, "log_pb": { "impr_id": "…" }
+}`,
+  extra: `<h2><span class="num">04</span> 字段</h2>
+  <div class="tw"><table>
+    <tr><th>字段</th><th>说明</th></tr>
+    <tr><td><code>status_code</code></td><td><code>0</code> = 成功</td></tr>
+    <tr><td><code>sug_list[].content</code></td><td>建议词，纯文本</td></tr>
+    <tr><td><code>sug_list[].pos</code></td><td>高亮区间 <code>[{begin, end}]</code>，对 <code>content</code> 的字符下标，左闭右开</td></tr>
+    <tr><td><code>sug_list[].word_record</code></td><td>埋点记录（group_id / words_source），排序用，取词不需要</td></tr>
+    <tr><td><code>sug_list[].extra_info</code></td><td>40+ 项排序特征（ctr/ecpm/ecom…），<strong>不要用</strong></td></tr>
+  </table></div>`,
+  notes: ["固定 10 条。", "<code>pos</code> 是唯一可靠的高亮来源 —— <code>content</code> 本身不含任何标记。"],
+  compliance: `<code>www.douyin.com/robots.txt</code> 列了 28 个具名爬虫，<strong>无 <code>User-agent: *</code> 段</strong>。`
+}
+,
+/* ============ 抖音 · 热搜 ============ */
+"douyin-hot": {
+  group: "抖音", label: "热搜榜",
+  title: "热搜榜 · 带热度值",
+  sub: "49 条热词，含热度整数、排名、关联视频数。无需签名。",
+  status: { l: "ok", t: "可用" },
+  method: "GET", url: "https://www.douyin.com/aweme/v1/web/hot/search/list/",
+  src: "douyin/README.md",
+  params: [["aid", "是", "<code>6383</code>"], ["detail_list", "否", "<code>1</code> 返回完整字段"]],
+  headers: `User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36
+Referer: https://www.douyin.com/`,
+  curl: `curl -sS 'https://www.douyin.com/aweme/v1/web/hot/search/list/?aid=6383&detail_list=1' \\
+  -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36' \\
+  -e 'https://www.douyin.com/'`,
+  responseTag: "json",
+  response: `{
+  "status_code": 0,
+  "data": {
+    "active_time": "2026-10-31 14:41:30",
+    "word_list": [
+      { "word": "冬天奶茶要挖着吃才满足",
+        "position": 1, "hot_value": 11362235,
+        "sentence_id": 2720819, "label": 3,
+        "event_time": 1793337690,
+        "video_count": 3, "discuss_video_count": 1,
+        "word_cover": { "url_list": ["https://p26-sign.douyinpic.com/…"] },
+        "group_id": "7700253299685545275" }
+    ],
+    "trending_list": []
+  }
+}`,
+  extra: `<h2><span class="num">04</span> 字段</h2>
+  <div class="tw"><table>
+    <tr><th>字段</th><th>说明</th></tr>
+    <tr><td><code>data.word_list</code></td><td>榜单，实测 <strong>49 条</strong>（不是整 50）</td></tr>
+    <tr><td><code>word</code></td><td>热搜词</td></tr>
+    <tr><td><code>position</code></td><td>排名，<strong>从 1 开始</strong></td></tr>
+    <tr><td><code>hot_value</code></td><td>热度整数（如 11362235）</td></tr>
+    <tr><td><code>event_time</code></td><td>Unix 秒</td></tr>
+    <tr><td><code>video_count</code> / <code>discuss_video_count</code></td><td>关联视频/讨论数，可能为 0</td></tr>
+    <tr><td><code>word_cover.url_list[0]</code></td><td>封面图，签名链接会过期</td></tr>
+    <tr><td><code>label</code> / <code>word_type</code></td><td>类型编码（3 = 热，1 = 新），语义未公开</td></tr>
+  </table></div>`,
+  notes: ["已按 <code>position</code> 排好序，顺序遍历即可。", "<code>word_cover</code> 的 URL 带签名，缓存的链接会过期。"],
+  compliance: `无 <code>User-agent: *</code> 段声明。`
+}
+,
+/* ============ 抖音 · 内容搜索 ============ */
+"douyin-search": {
+  group: "抖音", label: "内容搜索",
+  title: "内容搜索 · 需登录",
+  sub: "匿名调用返回 HTTP 200，但只有 127 字节：status_code 2483「请先登录」。这不是参数问题，也不是签名问题。",
+  status: { l: "err", t: "需登录" },
+  method: "GET", url: "https://www.douyin.com/aweme/v1/web/general/search/single/",
+  src: "douyin/README.md",
+  params: [["keyword", "是", "关键词"], ["aid", "是", "<code>6383</code>"], ["search_channel", "否", "<code>aweme_general</code>"]],
+  headers: `User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36
+Referer: https://www.douyin.com/`,
+  curl: `curl -sS 'https://www.douyin.com/aweme/v1/web/general/search/single/?keyword=test&aid=6383' \\
+  -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36' \\
+  -e 'https://www.douyin.com/'`,
+  responseTag: "json（127 字节）",
+  response: `{
+  "log_pb": { "impr_id": "2026103114485182B956C13336E654BD93" },
+  "status_code": 2483,
+  "status_msg": "请先登录，再继续搜索吧"
+}`,
+  extra: `<h2><span class="num">04</span> 怎么看这个响应</h2>
+  <ul>
+    <li><code>status_code: 2483</code> 是明确的<strong>需登录</strong>，与 <code>0</code>（成功）区分明显。</li>
+    <li>127 字节意味着没有任何结果数据 —— 不要尝试从 <code>log_pb</code> 里找东西。</li>
+    <li>同域的 <a href="#/douyin-suggest">联想</a> 与 <a href="#/douyin-hot">热搜</a> <strong>不需要登录</strong>，可以正常用。</li>
+  </ul>`,
+  notes: ["本页没有结果字段表 —— 拿不到就不写。", "需要抖音视频数据时，可先用热搜拿到话题词，再换其它可用的视频源。"],
+  compliance: `与联想/热搜同域。`
+}
+,
+/* ============ 秘塔 ============ */
+"metaso-api": {
+  group: "秘塔 AI", label: "API 接口",
+  title: "秘塔 AI 搜索 · 需要 Key",
+  sub: "AI 搜索这一类没有匿名入口。官方端点存在（405 证明只收 POST），但必须带 API Key。",
+  status: { l: "err", t: "需 Key" },
+  method: "POST", url: "https://metaso.cn/api/v1/search",
+  src: "metaso/README.md",
+  params: [["Content-Type", "头", "<code>application/json</code>"], ["Authorization", "头", "<code>Bearer &lt;Key&gt;</code>"], ["body", "是", "无 Key 时无法反推 schema（三种键返回同一错误）"]],
+  headers: `Content-Type: application/json
+Authorization: Bearer <你的 Key>`,
+  curl: `curl -sS -X POST 'https://metaso.cn/api/v1/search' \\
+  -H 'Content-Type: application/json' \\
+  -H 'Authorization: Bearer <你的 Key>' \\
+  -d '{"question":"什么是向量数据库"}'`,
+  responseTag: "json",
+  response: `// 无 Key（HTTP 200，43 字节）
+{"errCode":2005,"errMsg":"API密钥无效"}
+
+// 用 GET 请求同一路径（HTTP 405）
+{"timestamp":"2026-10-31T06:52:00.738+00:00","status":405,
+ "error":"Method Not Allowed","path":"/api/v1/search"}`,
+  extra: `<h2><span class="num">04</span> 两个结论</h2>
+  <ul>
+    <li><strong>405 说明路径真实存在</strong>，只是方法不对 —— 确认端点的强信号。</li>
+    <li><strong>200 + <code>errCode 2005</code></strong>：三种不同 body（<code>question</code> / <code>q</code> / <code>query</code>）返回完全一致，说明先校验 Key，<strong>无法反推请求体结构</strong>。</li>
+  </ul>
+  <h2><span class="num">05</span> 不接 Key 的替代路线</h2>
+  <p>AI 搜索 = 检索 + 生成。检索用本仓库可用的接口，生成接任意模型：</p>
+  <div class="tw"><table>
+    <tr><th>步骤</th><th>用什么</th></tr>
+    <tr><td>检索</td><td><a href="#/bing-image">Bing 图片分页</a> / <a href="#/360-image">360 图片</a> / <a href="#/bili-search">B站视频</a> / <a href="#/douyin-hot">抖音热搜</a></td></tr>
+    <tr><td>正文</td><td>取结果里的 <code>arcurl</code> / <code>purl</code></td></tr>
+    <tr><td>生成</td><td>拼「标题 + 摘要 + 来源编号」交给模型，要求标注来源</td></tr>
+  </table></div>`,
+  notes: ["网页端桌面要求扫码登录，匿名会话不发搜索请求。", "有 Key 后的返回结构本仓库没有实测样本，不写。"],
+  compliance: `<code>metaso.cn</code> 无 <code>robots.txt</code>（404）。`
 }
 
 };

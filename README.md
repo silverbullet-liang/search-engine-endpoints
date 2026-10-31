@@ -1,6 +1,6 @@
 # search-engine-endpoints
 
-四家中文环境可访问的搜索引擎 —— **Bing / 百度 / 360 / 搜狗** —— 的 Web 搜索、图片搜索、输入联想三类公开 HTTP 端点实测记录：请求方式、请求头、参数语义、返回结构，以及**拒绝响应长什么样**。
+八家搜索引擎的公开 HTTP 端点实测记录：**Bing / 百度 / 360 / 搜狗**（通用搜索）+ **哔哩哔哩 / 抖音 / 神马 / 秘塔 AI**（垂直与 AI 搜索）。每条都写清能不能用、怎么调对、字段真值是什么。
 
 **在线浏览：https://silverbullet-liang.github.io/search-engine-endpoints/** ← 全部内容做成了单文件文档站，含参数表、请求头、请求示例与返回示例。
 
@@ -12,7 +12,9 @@
 
 ---
 
-## 一张表看清四家
+## 一张表看清八家
+
+**通用搜索**
 
 | | Bing | 百度 | 360 | 搜狗 |
 |---|---|---|---|---|
@@ -20,12 +22,21 @@
 | **图片接口** | 片段，**可分页** | 200 + `antiFlag` | **200 可用**（累积集合） | 200 + `forbid` |
 | **输入联想** | 可用（HTML/JSON） | **可用**（JSON/JSONP） | **可用**（JSON） | 200 + 0 字节 |
 | **返回格式** | 几乎全是 HTML | JSON | JSON | — |
-| **`robots.txt`（`User-agent: *`）** | `Disallow: /search` 等 | `Disallow: /` | `Disallow: /s`、`/j?` | `Disallow: /`、`/napi` |
 | **文档** | [bing/](bing/README.md) | [baidu/](baidu/README.md) | [360/](360/README.md) | [sogou/](sogou/README.md) |
+
+**垂直与 AI**
+
+| | 哔哩哔哩 | 抖音 | 神马 | 秘塔 AI |
+|---|---|---|---|---|
+| **内容搜索** | **视频搜索可用**（需 buvid3） | 200 + `2483` 需登录 | `bixi` punish 壳 | 需 API Key |
+| **输入联想** | **可用**（带高亮区间） | **可用**（无需签名） | punish 脚本 | — |
+| **榜单/热榜** | **可用**（10 条） | **可用**（49 条 + 热度值） | — | — |
+| **返回格式** | JSON | JSON | — | JSON |
+| **文档** | [bilibili/](bilibili/README.md) | [douyin/](douyin/README.md) | [shenma/](shenma/README.md) | [metaso/](metaso/README.md) |
 
 ¹ 百度 Web 结果页在**真实浏览器**里返回 200 正常结果，curl 则被 302 到验证码 —— 同一 IP、同一 URL，只有客户端不同。
 
-**四个引擎的搜索端点，对通配代理（也就是任何未报名的程序）在 `robots.txt` 里全部处于禁止或受限状态。** 这是本仓库把定位收紧到"事实记录"的直接原因。
+这八家里，**通用网页搜索没有一个能匿名稳定取到完整结果**；可用面集中在图片（Bing、360）、联想（四家）、热榜（B站、抖音）、视频（B站）。
 
 ---
 
@@ -54,6 +65,22 @@
 风控判定会随出口 IP、客户端指纹、时段变化。今天测通的，明天可能 302。所有数值都带日期与环境，请在自己的环境里复测后再采信。
 
 ---
+
+## 给 AI 用
+
+两个机器可读产物，专门给模型与 Agent 消费：
+
+| 文件 | 用途 |
+|---|---|
+| [`api.json`](api.json) | 8 引擎、25 端点的结构化清单：`available`、参数、字段类型、翻页方式、坑。可直接当 tool 目录读 |
+| [`llms.txt`](llms.txt) | 纯文本索引，五十行内说清「哪些能用、哪些不行、字段哪里会错」 |
+
+在线地址：
+
+- https://silverbullet-liang.github.io/search-engine-endpoints/api.json
+- https://silverbullet-liang.github.io/search-engine-endpoints/llms.txt
+
+站内还有一页 [给 AI 用](https://silverbullet-liang.github.io/search-engine-endpoints/#/ai-usage)，给出可直接粘进 system prompt 的调用说明。
 
 ## 引擎导航
 
@@ -105,10 +132,16 @@ python3 test/test_parse.py
 ├── baidu/          百度：README + web / image / suggest
 ├── 360/            360：README + web / image / suggest
 ├── sogou/          搜狗：README + web / image / suggest
+├── bilibili/       哔哩哔哩：README（视频搜索 / 联想 / 热搜，全部可用）
+├── douyin/         抖音：README（联想 / 热搜可用，内容搜索需登录）
+├── shenma/         神马：README（无可用接口 + 等价替代）
+├── metaso/         秘塔 AI：README（API 需 Key + 不接 Key 的路线）
+├── api.json        机器可读端点清单（8 引擎 / 25 端点）
+├── llms.txt        LLM 索引
 ├── examples/       parse_images.py（零依赖解析器）
 ├── samples/        脱敏片段样本
 ├── test/           离线自查（9 项）
-├── NOTICE.md       合规边界 + 四家 robots 原文 + 版权声明原文
+├── NOTICE.md       合规边界 + 各家 robots 原文 + 版权声明原文
 └── README.md       本文件
 ```
 
