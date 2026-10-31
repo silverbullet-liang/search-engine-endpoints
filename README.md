@@ -67,18 +67,39 @@
 
 ---
 
-## 技能包（可直接安装）
+## 技能包：一次调用，一份 JSON
 
-[skill/aggregate-search/](skill/aggregate-search/) 是把这八家端点封装好的聚合搜索技能：一次调用并发请求多个引擎，输出统一 JSON。
+[skill/aggregate-search/](skill/aggregate-search/) 把这八家端点封装成聚合搜索技能。它与常见搜索封装的差别不在「能不能搜」，而在**失败怎么处理、结果怎么归一**：
+
+| 维度 | 常见搜索封装 | 本技能 |
+|---|---|---|
+| 鉴权 | 要 API Key（Serper / Tavily / Bing API），按次计费 | 八家全是网页端匿名端点，**零密钥、零账号、零费用** |
+| 覆盖 | 通常只包一家引擎 | 8 引擎 / 6 模态，一次调用并发 |
+| 失败 | 单源失败即整体失败，或返回空数组让人猜 | **fail-soft**：错误进 `engines[].error`，其余引擎结果照常返回 |
+| 结构 | 各源字段各异，下游为每个源写分支 | **统一 schema**，`rank / score / engine / engines / type` 恒在 |
+| 去重 | 多是把几个数组拼起来 | URL 规范化（去 utm/spm/尾斜杠/锚点）+ **RRF 融合**，多引擎命中自动上浮 |
+| 异构源 | 只管 JSON，HTML 留给你 | 神马的 SSR HTML 在适配器内解析成同构 JSON，`<em>` 高亮已剥离、广告卡已剔除 |
+| AI 搜索 | 只给一段文本 | 秘塔给 `answer + thinking + citations[]`，引用 30 字段含 `refer_id`（对应正文角标） |
+| 依赖 | requests + bs4 + lxml | **纯标准库**，Python 3.9+ 直接跑 |
+| 排查 | 出错只有一句 traceback | `--fresh` 看各引擎原始结果、`--debug` 带堆栈、`engines[]` 报每引擎耗时与错误 |
 
 ```bash
-python3 scripts/search.py "量子计算"                    # 网页
-python3 scripts/search.py "猫" --kind image --limit 40   # 图片
-python3 scripts/search.py "量子计算" --kind bundle       # web+image+video+hot
+python3 scripts/search.py "量子计算"                      # 网页：神马 + Bing
+python3 scripts/search.py "猫" --kind image --limit 40     # 图片：Bing + 360
+python3 scripts/search.py "量子计算" --kind bundle         # web + image + video + hot
 python3 scripts/search.py "什么是向量数据库" --kind ai --citations
 ```
 
-统一字段、跨引擎去重、RRF 融合打分、单引擎失败不影响整体。详见 [SKILL.md](skill/aggregate-search/SKILL.md)。
+实测（2026-10-31）：`bundle` 四类并发 8 个引擎 4.4 秒；图片单轮 125 条；视频 47 条；热榜 88 条。
+
+**它不适合什么** —— 说清楚比说好听有用：
+
+- **覆盖不等于全互联网**：只有这八家，百度 / 360 / 搜狗的 Web 结果页被验证码挡住，取不到。
+- **稳定性跟着对方前端走**：网页端端点随时可能改版失效；失效时 `engines[].error` 会如实报出，而不是静默返回空。
+- **有 IP 级限流**：秘塔匿名连续 6–8 次 429，神马高频也会触发风控。这是配额，不是代码。
+- **以中文语料为主**：英文检索建议只用 `--engines bing`。
+
+详见 [SKILL.md](skill/aggregate-search/SKILL.md)。
 
 ## 给 AI 用
 
