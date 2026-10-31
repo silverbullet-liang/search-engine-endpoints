@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>search-engine-endpoints · 四引擎搜索端点实测记录</title>
-<meta name="description" content="Bing / 百度 / 360 / 搜狗 的 Web、图片、联想端点实测记录：请求方式、请求头、返回结构、拒绝信号。非官方，仅文档，不含采集工具。">
+<title>search-engine-endpoints · 八引擎搜索端点实测记录</title>
+<meta name="description" content="八家搜索引擎的逆向接口实测记录：Bing / 百度 / 360 / 搜狗 / 哔哩哔哩 / 抖音 / 神马 / 秘塔 AI。请求方式、请求头、参数语义、真实字段值与拒绝形态，附 api.json 与 llms.txt。非官方，仅文档，不含采集工具。">
 <meta name="color-scheme" content="dark light">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230b0b0c'/%3E%3Crect x='6' y='9' width='7' height='3' fill='%23e3b341'/%3E%3Crect x='6' y='15' width='14' height='3' fill='%23e6e6e3'/%3E%3Crect x='6' y='21' width='10' height='3' fill='%238f8f97'/%3E%3C/svg%3E">
 <style>
@@ -207,7 +207,7 @@ footer a{border-bottom-color:var(--line)}
         <rect x="6" y="15" width="14" height="3" fill="currentColor"/>
         <rect x="6" y="21" width="10" height="3" fill="currentColor" opacity=".45"/>
       </svg>
-      <div class="brand-t"><b>search-engine-endpoints</b><span>四引擎 · 端点实测</span></div>
+      <div class="brand-t"><b>search-engine-endpoints</b><span>八引擎 · 29 端点实测</span></div>
     </div>
     <div class="side-tools">
       <label class="search">
@@ -220,7 +220,7 @@ footer a{border-bottom-color:var(--line)}
     </div>
     <nav class="side" id="nav"></nav>
     <div class="side-foot">
-      2026-10-25 实测 · 匿名会话<br>
+      2026-10-25 ~ 10-31 实测 · 匿名会话<br>
       <a href="https://github.com/silverbullet-liang/search-engine-endpoints" target="_blank" rel="noopener">GitHub 仓库</a> ·
       <a href="https://github.com/silverbullet-liang/search-engine-endpoints/blob/main/NOTICE.md" target="_blank" rel="noopener">合规边界</a>
     </div>
@@ -240,7 +240,7 @@ footer a{border-bottom-color:var(--line)}
     </div>
     <article id="view" tabindex="-1"></article>
     <footer>
-      非官方项目，与 Microsoft / 百度 / 360 / 搜狗 无关联。本页只记录公开可观测的接口事实，不含采集工具，也不提供验证码或指纹绕过方法。
+      非官方项目，与 Microsoft、百度、360、搜狗、哔哩哔哩、抖音、神马、秘塔均无关联。本页只记录公开可观测的接口事实，不含采集工具，也不提供验证码或指纹绕过方法。
       四家 <code>robots.txt</code> 对通配代理均为禁止或受限状态 —— 详见 <a href="https://github.com/silverbullet-liang/search-engine-endpoints/blob/main/NOTICE.md" target="_blank" rel="noopener">NOTICE.md</a>。
     </footer>
   </main>
@@ -500,7 +500,7 @@ Disallow: /ris</pre></div>
     <li>再分发搜索结果内容、图像或其中的第三方链接集合。</li>
     <li>把端点用于替代官方商业授权的生产数据源。</li>
   </ul>
-  <p class="hint">完整表述见 <a href="https://github.com/silverbullet-liang/search-engine-endpoints/blob/main/NOTICE.md" target="_blank" rel="noopener">NOTICE.md</a>，含四家 robots 的完整引录与 RSS 版权声明原文。</p>`
+  <p class="hint">完整表述见 <a href="https://github.com/silverbullet-liang/search-engine-endpoints/blob/main/NOTICE.md" target="_blank" rel="noopener">NOTICE.md</a>，含 Bing / 百度 / 360 / 搜狗 的 robots 完整引录与 RSS 版权声明原文。</p>`
 },
 
 /* ============ Bing · Web ============ */
